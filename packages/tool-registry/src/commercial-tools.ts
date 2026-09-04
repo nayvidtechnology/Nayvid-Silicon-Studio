@@ -71,9 +71,17 @@ export const COMMERCIAL_EDA_PROFILES: ToolDefinition[] = [
   },
 ];
 
-export function createEnterpriseToolRegistry(enabledProfileIds?: string[]): ToolRegistry {
-  const enabled = enabledProfileIds?.length
-    ? COMMERCIAL_EDA_PROFILES.filter((profile) => enabledProfileIds.includes(profile.id))
+export const ALL_EDA_PROFILES: ToolDefinition[] = [...BUILTIN_TOOLS, ...COMMERCIAL_EDA_PROFILES];
+
+export function createEnterpriseToolRegistry(enabledCommercialProfileIds?: string[]): ToolRegistry {
+  const enabled = enabledCommercialProfileIds?.length
+    ? COMMERCIAL_EDA_PROFILES.filter((profile) => enabledCommercialProfileIds.includes(profile.id))
     : COMMERCIAL_EDA_PROFILES;
   return new ToolRegistry([...BUILTIN_TOOLS, ...enabled]);
+}
+
+/** Build a strict registry containing only tools declared by the project. */
+export function createProjectToolRegistry(enabledToolIds: string[]): ToolRegistry {
+  const ids = new Set(enabledToolIds);
+  return new ToolRegistry(ALL_EDA_PROFILES.filter((profile) => ids.has(profile.id)));
 }
