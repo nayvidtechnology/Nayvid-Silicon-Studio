@@ -4,7 +4,6 @@ import { ExecutionRuntimeManager, type RuntimeType } from '@nayvid/execution-run
 import { SlangAdapter } from '@nayvid/hdl-language';
 import { VeriVisualEngine } from '@nayvid/verivisual';
 import { ToolRegistry } from '@nayvid/tool-registry';
-import type { DesignSignal } from '@nayvid/design-ir';
 
 export interface ToolDefinitionSpec {
   name: string;
@@ -35,7 +34,7 @@ function walkFiles(root: string, acc: string[] = []): string[] {
     return acc;
   }
   for (const entry of fs.readdirSync(root)) {
-    if (['node_modules', '.git', 'dist', 'build', 'release'].includes(entry)) continue;
+    if (['node_modules', '.git', 'dist', 'build', 'release', '.nayvid'].includes(entry)) continue;
     walkFiles(path.join(root, entry), acc);
   }
   return acc;
@@ -59,16 +58,18 @@ export class AgentToolGateway {
   private resolveWorkspacePath(input: string): string {
     const candidate = path.resolve(this.workspaceRoot, input);
     const relative = path.relative(this.workspaceRoot, candidate);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) {
-      throw new Error(`Path '${input}' escapes workspace root.`);
-    }
+    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error(`Path '${input}' escapes workspace root.`);
     return candidate;
+  }
+
+  private relativeToolPath(input: string): string {
+    const absolute = this.resolveWorkspacePath(input);
+    return path.relative(this.workspaceRoot, absolute).replace(/\\/g, '/');
   }
 
   private async executeRegisteredTool(toolId: string, args: string[], cwd?: string): Promise<ToolResult> {
     const tool = this.registry.getTool(toolId);
     if (!tool) return { success: false, output: null, error: `Tool '${toolId}' is not registered.` };
-
     try {
       const backend = await this.runtimeManager.resolveBestBackendFor(tool.supportedRuntimes, this.preferredRuntime);
       const res = await backend.execute(tool.binaryName, args, { cwd, timeoutMs: 120000 });
@@ -96,7 +97,7 @@ export class AgentToolGateway {
       { name: 'run_compile', description: 'Compile/lint SystemVerilog using Verilator', parameters: { type: 'object', properties: { topModule: { type: 'string' }, files: { type: 'array', items: { type: 'string' } } }, required: ['topModule', 'files'] } },
       { name: 'run_synthesis', description: 'Execute Yosys synthesis and return real tool output', parameters: { type: 'object', properties: { topModule: { type: 'string' }, files: { type: 'array', items: { type: 'string' } } }, required: ['topModule', 'files'] } },
       { name: 'run_test', description: 'Execute a named verification command without a shell', parameters: { type: 'object', properties: { command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } }, cwd: { type: 'string' } }, required: ['command'] }, requiresApproval: true },
-      { name: 'run_simulation', description: 'Compile SystemVerilog testbench using Icarus and execute with vvp', parameters: { type: 'object', properties: { topModule: { type: 'string' }, files: { type: 'array', items: { type: 'string' } }, output: { type: 'string' } }, required: ['topModule', 'files'] } },
+      { name: 'run_simulation', description: 'Compile SystemVerilog testbench using Icarus and execute with vvp on the same backend', parameters: { type: 'object', properties: { topModule: { type: 'string' }, files: { type: 'array', items: { type: 'string' } }, output: { type: 'string' } }, required: ['topModule', 'files'] } },
       { name: 'read_waveform', description: 'Read and parse a VCD simulation waveform file', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
       { name: 'apply_patch', description: 'Apply exact search-and-replace modification to a file', parameters: { type: 'object', properties: { path: { type: 'string' }, search: { type: 'string' }, replace: { type: 'string' } }, required: ['path', 'search', 'replace'] }, requiresApproval: true },
       { name: 'git_diff', description: 'Show the actual git diff for workspace/path', parameters: { type: 'object', properties: { path: { type: 'string' } } } },
@@ -105,12 +106,10 @@ export class AgentToolGateway {
     ];
   }
 
-  async executeTool(name: string, args: Record<string, any>, approved: boolean = false): Promise<ToolResult> {
-    const spec = this.getAvailableTools().find((t) => t.name === name);
+  async executeTool(name: string, args: Record<string, any>, approved = false): Promise<ToolResult> {
+    const spec = this.getAvailableTools().find((tool) => tool.name === name);
     if (!spec) return { success: false, output: null, error: `Unknown tool: ${name}` };
-    if (spec.requiresApproval && !approved) {
-      return { success: false, requiresApproval: true, output: null, error: `Tool '${name}' requires user approval before execution.` };
-    }
+    if (spec.requiresApproval && !approved) return { success: false, requiresApproval: true, output: null, error: `Tool '${name}' requires user approval before execution.` };
 
     try {
       switch (name) {
@@ -158,18 +157,19 @@ export class AgentToolGateway {
           return { success: true, output: name === 'find_driver' ? context.drivers : context.loads };
         }
         case 'run_lint': {
-          const files = (args.files as string[]).map((f) => this.resolveWorkspacePath(f));
-          const realLint = await this.executeRegisteredTool('verible', files);
+          const absoluteFiles = (args.files as string[]).map((file) => this.resolveWorkspacePath(file));
+          const toolFiles = (args.files as string[]).map((file) => this.relativeToolPath(file));
+          const realLint = await this.executeRegisteredTool('verible', toolFiles, this.workspaceRoot);
           if (realLint.success || !/No available execution backend|not registered|ENOENT|not found/i.test(realLint.error || '')) return realLint;
-          return { success: true, output: await this.slang.runLint(files) };
+          return { success: true, output: await this.slang.runLint(absoluteFiles) };
         }
         case 'run_compile': {
-          const files = (args.files as string[]).map((f) => this.resolveWorkspacePath(f));
+          const files = (args.files as string[]).map((file) => this.relativeToolPath(file));
           return this.executeRegisteredTool('verilator', ['--lint-only', '--top-module', args.topModule, ...files], this.workspaceRoot);
         }
         case 'run_synthesis': {
-          const files = (args.files as string[]).map((f) => this.resolveWorkspacePath(f));
-          const script = `read_verilog -sv ${files.map((f) => `\"${f.replace(/\\/g, '/')}\"`).join(' ')}; hierarchy -check -top ${args.topModule}; proc; opt; stat`;
+          const files = (args.files as string[]).map((file) => this.relativeToolPath(file));
+          const script = `read_verilog -sv ${files.map((file) => `\"${file}\"`).join(' ')}; hierarchy -check -top ${args.topModule}; proc; opt; stat`;
           return this.executeRegisteredTool('yosys', ['-p', script], this.workspaceRoot);
         }
         case 'run_test':
@@ -180,13 +180,15 @@ export class AgentToolGateway {
           return { success: result.code === 0, output: result.stdout, error: result.code === 0 ? undefined : result.stderr, runtimeUsed: backend.type, exitCode: result.code };
         }
         case 'run_simulation': {
-          const files = (args.files as string[]).map((f) => this.resolveWorkspacePath(f));
-          const output = this.resolveWorkspacePath(args.output || '.nayvid/sim/sim.out');
-          fs.mkdirSync(path.dirname(output), { recursive: true });
-          const compile = await this.executeRegisteredTool('iverilog', ['-g2012', '-s', args.topModule, '-o', output, ...files], this.workspaceRoot);
-          if (!compile.success) return compile;
-          const backend = await this.runtimeManager.resolveBestBackend(this.preferredRuntime);
-          const run = await backend.execute('vvp', [output], { cwd: this.workspaceRoot, timeoutMs: 120000 });
+          const files = (args.files as string[]).map((file) => this.relativeToolPath(file));
+          const outputInput = String(args.output || '.nayvid/sim/sim.out');
+          const outputAbsolute = this.resolveWorkspacePath(outputInput);
+          fs.mkdirSync(path.dirname(outputAbsolute), { recursive: true });
+          const outputRelative = path.relative(this.workspaceRoot, outputAbsolute).replace(/\\/g, '/');
+          const compile = await this.executeRegisteredTool('iverilog', ['-g2012', '-s', args.topModule, '-o', outputRelative, ...files], this.workspaceRoot);
+          if (!compile.success || !compile.runtimeUsed) return compile;
+          const backend = this.runtimeManager.getBackend(compile.runtimeUsed);
+          const run = await backend.execute('vvp', [outputRelative], { cwd: this.workspaceRoot, timeoutMs: 120000 });
           return { success: run.code === 0, output: run.stdout, error: run.code === 0 ? undefined : run.stderr, runtimeUsed: backend.type, exitCode: run.code };
         }
         case 'read_waveform': {
@@ -204,7 +206,7 @@ export class AgentToolGateway {
         }
         case 'git_diff': {
           const backend = await this.runtimeManager.resolveBestBackend(this.preferredRuntime);
-          const diffArgs = ['diff', '--', ...(args.path ? [args.path] : [])];
+          const diffArgs = ['diff', '--', ...(args.path ? [this.relativeToolPath(args.path)] : [])];
           const result = await backend.execute('git', diffArgs, { cwd: this.workspaceRoot, timeoutMs: 30000 });
           return { success: result.code === 0, output: result.stdout, error: result.code === 0 ? undefined : result.stderr, runtimeUsed: backend.type, exitCode: result.code };
         }
