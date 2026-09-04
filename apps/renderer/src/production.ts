@@ -18,6 +18,7 @@ import {
 } from '@nayvid/platform-core/signoff-evidence';
 import { SlangCliAdapter, type SlangElaborationResult } from '@nayvid/hdl-language/slang-cli';
 import { AgentToolGateway, type ToolResult } from '@nayvid/agent-tools';
+import { createProjectToolRegistry } from '@nayvid/tool-registry';
 
 interface ElaboratorLike {
   elaborate(request: {
@@ -34,7 +35,11 @@ interface ToolGatewayLike {
   executeTool(name: string, args: Record<string, any>, approved?: boolean): Promise<ToolResult>;
 }
 
-type ToolGatewayFactory = (workspaceRoot: string, allowedRuntimes?: Array<'native-windows' | 'wsl2' | 'linux' | 'docker'>) => ToolGatewayLike;
+type ToolGatewayFactory = (
+  workspaceRoot: string,
+  allowedRuntimes?: Array<'native-windows' | 'wsl2' | 'linux' | 'docker'>,
+  enabledToolIds?: string[]
+) => ToolGatewayLike;
 
 export class StudioProductionController {
   private session?: ProductionProjectSession;
@@ -43,11 +48,12 @@ export class StudioProductionController {
 
   constructor(
     private elaborator: ElaboratorLike = new SlangCliAdapter(),
-    private gatewayFactory: ToolGatewayFactory = (workspaceRoot, allowedRuntimes) => new AgentToolGateway(undefined, {
+    private gatewayFactory: ToolGatewayFactory = (workspaceRoot, allowedRuntimes, enabledToolIds = []) => new AgentToolGateway(undefined, {
       workspaceRoot,
       allowedRuntimes,
       externalCommandAllowlist: ['git'],
       maxTimeoutMs: 10 * 60 * 1000,
+      registry: createProjectToolRegistry(enabledToolIds),
     })
   ) {}
 
@@ -55,7 +61,11 @@ export class StudioProductionController {
     const absolute = path.resolve(manifestPath);
     const manifest = this.manifestService.loadJson(absolute);
     this.session = new ProductionProjectSession(path.dirname(absolute), manifest);
-    this.gateway = this.gatewayFactory(this.session.workspaceRoot, manifest.security?.allowedRuntimes);
+    this.gateway = this.gatewayFactory(
+      this.session.workspaceRoot,
+      manifest.security?.allowedRuntimes,
+      (manifest.toolchain ?? []).map((tool) => tool.toolId)
+    );
     this.session.audit.append({ actor, action: 'project:open', resource: manifest.name, outcome: 'success', details: { manifestPath: path.basename(absolute), projectDigest: this.session.projectDigest } });
     return this.session;
   }
