@@ -6,7 +6,8 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
-    "./reproducibility": "./dist/reproducibility.js"
+    "./reproducibility": "./dist/reproducibility.js",
+    "./signoff-evidence": "./dist/signoff-evidence.js"
   },
   "scripts": {
     "build": "tsc",
