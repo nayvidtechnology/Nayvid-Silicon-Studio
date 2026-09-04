@@ -7,143 +7,147 @@ export function parseVcdTimescaleMultiplier(timescaleStr: string): number {
   const unit = match[2].toLowerCase();
 
   switch (unit) {
-    case 's':
-      return num * 1e9;
-    case 'ms':
-      return num * 1e6;
-    case 'us':
-      return num * 1e3;
-    case 'ns':
-      return num * 1;
-    case 'ps':
-      return num * 1e-3;
-    case 'fs':
-      return num * 1e-6;
-    default:
-      return 1;
+    case 's': return num * 1e9;
+    case 'ms': return num * 1e6;
+    case 'us': return num * 1e3;
+    case 'ns': return num;
+    case 'ps': return num * 1e-3;
+    case 'fs': return num * 1e-6;
+    default: return 1;
   }
+}
+
+interface VcdVarMeta {
+  id: string;
+  type: string;
+  width: number;
+  name: string;
+  fullName: string;
+}
+
+function normalizeTimescale(raw: string): string {
+  return raw.replace(/\s+/g, '');
+}
+
+function decodeVector(bits: string): string | number {
+  if (/[xz]/i.test(bits)) return `0b${bits.toLowerCase()}`;
+  const parsed = parseInt(bits, 2);
+  return Number.isSafeInteger(parsed) ? parsed : `0b${bits}`;
 }
 
 export function parseVcd(vcdContent: string): WaveformModel {
   if (!vcdContent || !vcdContent.trim()) {
-    return {
-      timescale: '1ns',
-      signals: [
-        {
-          name: 'clk',
-          wave: [
-            { timeNs: 0, value: 0 },
-            { timeNs: 5, value: 1 },
-            { timeNs: 10, value: 0 },
-            { timeNs: 15, value: 1 },
-          ],
-        },
-        {
-          name: 'rst_n',
-          wave: [
-            { timeNs: 0, value: 0 },
-            { timeNs: 10, value: 1 },
-          ],
-        },
-      ],
-    };
+    return { timescale: '1ns', signals: [], startTimeNs: 0, endTimeNs: 0 };
   }
 
   let timescale = '1ns';
   let timescaleMultiplier = 1;
-  const idToName = new Map<string, string>();
-  const signalMap = new Map<string, WaveformSignalValue[]>();
+  let currentTimeNs = 0;
+  let startTimeNs = Number.POSITIVE_INFINITY;
+  let endTimeNs = 0;
+  const scopes: string[] = [];
+  const varsById = new Map<string, VcdVarMeta>();
+  const valuesById = new Map<string, WaveformSignalValue[]>();
 
   const lines = vcdContent.split(/\r?\n/);
-  let currentTimeNs = 0;
-
-  for (let line of lines) {
-    line = line.trim();
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
     if (!line) continue;
 
-    if (line.includes('$timescale')) {
-      const tsMatch = line.match(/\$timescale\s+([\d\s\w]+)\s*\$end/);
-      if (tsMatch) {
-        timescale = tsMatch[1].replace(/\s+/g, '');
+    if (line.startsWith('$timescale')) {
+      let raw = line;
+      while (!raw.includes('$end') && i + 1 < lines.length) raw += ` ${lines[++i].trim()}`;
+      const match = raw.match(/\$timescale\s+(.+?)\s+\$end/);
+      if (match) {
+        timescale = normalizeTimescale(match[1]);
         timescaleMultiplier = parseVcdTimescaleMultiplier(timescale);
       }
       continue;
     }
 
+    if (line.startsWith('$scope')) {
+      const match = line.match(/\$scope\s+\w+\s+(\S+)\s+\$end/);
+      if (match) scopes.push(match[1]);
+      continue;
+    }
+
+    if (line.startsWith('$upscope')) {
+      scopes.pop();
+      continue;
+    }
+
     if (line.startsWith('$var')) {
-      const varMatch = line.match(/\$var\s+\w+\s+\d+\s+(\S+)\s+(\S+)(?:\s+\[.*\])?\s+\$end/);
-      if (varMatch) {
-        const id = varMatch[1];
-        const name = varMatch[2];
-        idToName.set(id, name);
-        if (!signalMap.has(name)) {
-          signalMap.set(name, []);
-        }
+      const match = line.match(/\$var\s+(\w+)\s+(\d+)\s+(\S+)\s+(\S+)(?:\s+\[[^\]]+\])?\s+\$end/);
+      if (match) {
+        const [, type, widthText, id, name] = match;
+        const fullName = [...scopes, name].join('.');
+        varsById.set(id, { id, type, width: parseInt(widthText, 10), name, fullName });
+        valuesById.set(id, []);
       }
       continue;
     }
 
     if (line.startsWith('#')) {
-      const rawTime = parseInt(line.substring(1), 10);
-      if (!isNaN(rawTime)) {
-        currentTimeNs = Math.round(rawTime * timescaleMultiplier * 100) / 100;
+      const raw = parseInt(line.slice(1), 10);
+      if (!Number.isNaN(raw)) {
+        currentTimeNs = raw * timescaleMultiplier;
+        startTimeNs = Math.min(startTimeNs, currentTimeNs);
+        endTimeNs = Math.max(endTimeNs, currentTimeNs);
       }
       continue;
     }
 
-    const scalarMatch = line.match(/^([01xzXZ])(\S+)$/);
-    if (scalarMatch) {
-      const valStr = scalarMatch[1];
-      const id = scalarMatch[2];
-      const sigName = idToName.get(id);
-      if (sigName) {
-        const val = valStr === '1' ? 1 : valStr === '0' ? 0 : valStr;
-        const wave = signalMap.get(sigName)!;
-        wave.push({ timeNs: currentTimeNs, value: val });
+    // Ignore VCD directives such as $dumpvars while still parsing the value lines that follow.
+    if (line.startsWith('$')) continue;
+
+    const scalar = line.match(/^([01xXzZ])(\S+)$/);
+    if (scalar) {
+      const [, rawValue, id] = scalar;
+      const wave = valuesById.get(id);
+      if (wave) {
+        const value = rawValue === '1' ? 1 : rawValue === '0' ? 0 : rawValue.toLowerCase();
+        wave.push({ timeNs: currentTimeNs, value });
+        startTimeNs = Math.min(startTimeNs, currentTimeNs);
       }
       continue;
     }
 
-    const vectorMatch = line.match(/^b([01xzXZ]+)\s+(\S+)$/i);
-    if (vectorMatch) {
-      const binVal = vectorMatch[1];
-      const id = vectorMatch[2];
-      const sigName = idToName.get(id);
-      if (sigName) {
-        let numericVal: string | number = `0b${binVal}`;
-        if (!binVal.includes('x') && !binVal.includes('X') && !binVal.includes('z') && !binVal.includes('Z')) {
-          numericVal = parseInt(binVal, 2);
-        }
-        const wave = signalMap.get(sigName)!;
-        wave.push({ timeNs: currentTimeNs, value: numericVal });
+    const vector = line.match(/^b([01xXzZ]+)\s+(\S+)$/);
+    if (vector) {
+      const wave = valuesById.get(vector[2]);
+      if (wave) {
+        wave.push({ timeNs: currentTimeNs, value: decodeVector(vector[1]) });
+        startTimeNs = Math.min(startTimeNs, currentTimeNs);
       }
       continue;
+    }
+
+    const real = line.match(/^r([^\s]+)\s+(\S+)$/i);
+    if (real) {
+      const wave = valuesById.get(real[2]);
+      if (wave) {
+        const value = Number(real[1]);
+        wave.push({ timeNs: currentTimeNs, value: Number.isNaN(value) ? real[1] : value });
+        startTimeNs = Math.min(startTimeNs, currentTimeNs);
+      }
     }
   }
 
-  const signals: WaveformSignal[] = Array.from(signalMap.entries()).map(([name, wave]) => ({
-    name,
-    wave: wave.length > 0 ? wave : [{ timeNs: 0, value: 0 }],
-  }));
-
-  if (signals.length === 0) {
-    return {
-      timescale,
-      signals: [
-        {
-          name: 'clk',
-          wave: [
-            { timeNs: 0, value: 0 },
-            { timeNs: 5, value: 1 },
-            { timeNs: 10, value: 0 },
-          ],
-        },
-      ],
-    };
+  const signals: WaveformSignal[] = [];
+  for (const [id, meta] of varsById.entries()) {
+    signals.push({
+      name: meta.name,
+      fullName: meta.fullName,
+      width: meta.width,
+      type: meta.type,
+      wave: valuesById.get(id) ?? [],
+    });
   }
 
   return {
     timescale,
     signals,
+    startTimeNs: Number.isFinite(startTimeNs) ? startTimeNs : 0,
+    endTimeNs,
   };
 }
