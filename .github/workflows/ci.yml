@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feat/**', 'fix/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} / Node 22
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.20.0'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build all workspaces
+        run: pnpm build
+
+      - name: Run unit and integration tests
+        run: pnpm test
+
+  linux-eda-smoke:
+    name: Ubuntu / Real Icarus counter smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+
+      - name: Compile counter testbench
+        run: mkdir -p .nayvid/sim && iverilog -g2012 -s counter_tb -o .nayvid/sim/counter_tb.out examples/counter/rtl/counter.sv examples/counter/tb/counter_tb.sv
+
+      - name: Run counter testbench and generate VCD
+        run: vvp .nayvid/sim/counter_tb.out | tee .nayvid/sim/counter_tb.log
+
+      - name: Verify real simulation evidence
+        shell: bash
+        run: |
+          grep -q 'PASS: counter rollover and done pulse verified' .nayvid/sim/counter_tb.log
+          test -s sim.vcd
