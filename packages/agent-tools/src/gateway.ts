@@ -27,6 +27,7 @@ export interface AgentToolGatewayOptions {
   allowedRuntimes?: RuntimeType[];
   externalCommandAllowlist?: string[];
   maxTimeoutMs?: number;
+  registry?: ToolRegistry;
 }
 
 function walkFiles(root: string, acc: string[] = []): string[] {
@@ -50,7 +51,7 @@ function normalizeWorkspacePath(value: string): string {
 export class AgentToolGateway {
   private slang = new SlangAdapter();
   private verivisual = new VeriVisualEngine();
-  private registry = new ToolRegistry();
+  private registry: ToolRegistry;
   private workspaceRoot: string;
   private preferredRuntime: RuntimeType;
   private allowedRuntimes?: Set<RuntimeType>;
@@ -66,6 +67,7 @@ export class AgentToolGateway {
     this.allowedRuntimes = options.allowedRuntimes ? new Set(options.allowedRuntimes) : undefined;
     this.externalCommandAllowlist = options.externalCommandAllowlist ? new Set(options.externalCommandAllowlist) : undefined;
     this.maxTimeoutMs = Math.max(1000, Math.min(options.maxTimeoutMs ?? 120000, 30 * 60 * 1000));
+    this.registry = options.registry ?? new ToolRegistry();
   }
 
   private assertRuntimeAllowed(runtime: RuntimeType): void {
@@ -118,6 +120,7 @@ export class AgentToolGateway {
       { name: 'run_synthesis', description: 'Execute Yosys synthesis and return real tool output', parameters: { type: 'object', properties: { topModule: { type: 'string' }, files: { type: 'array', items: { type: 'string' } } }, required: ['topModule', 'files'] } },
       { name: 'run_test', description: 'Execute a named verification command without a shell', parameters: { type: 'object', properties: { command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } }, cwd: { type: 'string' } }, required: ['command'] }, requiresApproval: true },
       { name: 'run_simulation', description: 'Compile SystemVerilog testbench using Icarus and execute with vvp on the same backend', parameters: { type: 'object', properties: { topModule: { type: 'string' }, files: { type: 'array', items: { type: 'string' } }, output: { type: 'string' } }, required: ['topModule', 'files'] } },
+      { name: 'run_eda_tool', description: 'Run a specifically registered EDA executable without shell interpolation', parameters: { type: 'object', properties: { toolId: { type: 'string' }, args: { type: 'array', items: { type: 'string' } }, cwd: { type: 'string' } }, required: ['toolId'] }, requiresApproval: true },
       { name: 'read_waveform', description: 'Read and parse a VCD simulation waveform file', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
       { name: 'apply_patch', description: 'Apply exact search-and-replace modification to a file', parameters: { type: 'object', properties: { path: { type: 'string' }, search: { type: 'string' }, replace: { type: 'string' } }, required: ['path', 'search', 'replace'] }, requiresApproval: true },
       { name: 'git_diff', description: 'Show the actual git diff for workspace/path', parameters: { type: 'object', properties: { path: { type: 'string' } } } },
@@ -193,6 +196,14 @@ export class AgentToolGateway {
           const files = (args.files as string[]).map((file) => this.relativeToolPath(file));
           const script = `read_verilog -sv ${files.map((file) => `\"${file}\"`).join(' ')}; hierarchy -check -top ${args.topModule}; proc; opt; stat`;
           return this.executeRegisteredTool('yosys', ['-p', script], this.workspaceRoot);
+        }
+        case 'run_eda_tool': {
+          const toolId = String(args.toolId || '');
+          const tool = this.registry.getTool(toolId);
+          if (!tool) return { success: false, output: null, error: `EDA tool '${toolId}' is not enabled in this project registry.` };
+          const cwd = args.cwd ? this.resolveWorkspacePath(args.cwd) : this.workspaceRoot;
+          const toolArgs = Array.isArray(args.args) ? args.args.map(String) : [];
+          return this.executeRegisteredTool(toolId, toolArgs, cwd);
         }
         case 'run_test':
         case 'run_external_command': {
