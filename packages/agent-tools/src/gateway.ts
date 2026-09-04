@@ -24,6 +24,9 @@ export interface ToolResult {
 export interface AgentToolGatewayOptions {
   workspaceRoot?: string;
   preferredRuntime?: RuntimeType;
+  allowedRuntimes?: RuntimeType[];
+  externalCommandAllowlist?: string[];
+  maxTimeoutMs?: number;
 }
 
 function walkFiles(root: string, acc: string[] = []): string[] {
@@ -50,6 +53,9 @@ export class AgentToolGateway {
   private registry = new ToolRegistry();
   private workspaceRoot: string;
   private preferredRuntime: RuntimeType;
+  private allowedRuntimes?: Set<RuntimeType>;
+  private externalCommandAllowlist?: Set<string>;
+  private maxTimeoutMs: number;
 
   constructor(
     private runtimeManager: ExecutionRuntimeManager = new ExecutionRuntimeManager(),
@@ -57,6 +63,15 @@ export class AgentToolGateway {
   ) {
     this.workspaceRoot = path.resolve(options.workspaceRoot ?? process.cwd());
     this.preferredRuntime = options.preferredRuntime ?? 'auto';
+    this.allowedRuntimes = options.allowedRuntimes ? new Set(options.allowedRuntimes) : undefined;
+    this.externalCommandAllowlist = options.externalCommandAllowlist ? new Set(options.externalCommandAllowlist) : undefined;
+    this.maxTimeoutMs = Math.max(1000, Math.min(options.maxTimeoutMs ?? 120000, 30 * 60 * 1000));
+  }
+
+  private assertRuntimeAllowed(runtime: RuntimeType): void {
+    if (this.allowedRuntimes && !this.allowedRuntimes.has(runtime)) {
+      throw new Error(`Execution runtime '${runtime}' is blocked by project policy.`);
+    }
   }
 
   private resolveWorkspacePath(input: string): string {
@@ -76,7 +91,8 @@ export class AgentToolGateway {
     if (!tool) return { success: false, output: null, error: `Tool '${toolId}' is not registered.` };
     try {
       const backend = await this.runtimeManager.resolveBestBackendFor(tool.supportedRuntimes, this.preferredRuntime);
-      const res = await backend.execute(tool.binaryName, args, { cwd, timeoutMs: 120000 });
+      this.assertRuntimeAllowed(backend.type);
+      const res = await backend.execute(tool.binaryName, args, { cwd, timeoutMs: this.maxTimeoutMs });
       return {
         success: res.code === 0,
         output: (res.stdout || res.stderr).trim(),
@@ -131,11 +147,7 @@ export class AgentToolGateway {
             try { text = fs.readFileSync(file, 'utf-8'); } catch { continue; }
             text.split(/\r?\n/).forEach((line, index) => {
               if (line.includes(query) && matches.length < 200) {
-                matches.push({
-                  path: normalizeWorkspacePath(path.relative(this.workspaceRoot, file)),
-                  line: index + 1,
-                  text: line.trim(),
-                });
+                matches.push({ path: normalizeWorkspacePath(path.relative(this.workspaceRoot, file)), line: index + 1, text: line.trim() });
               }
             });
             if (matches.length >= 200) break;
@@ -184,9 +196,14 @@ export class AgentToolGateway {
         }
         case 'run_test':
         case 'run_external_command': {
+          const command = String(args.command);
+          if (this.externalCommandAllowlist && !this.externalCommandAllowlist.has(command)) {
+            return { success: false, output: null, error: `External command '${command}' is blocked by project policy.` };
+          }
           const backend = await this.runtimeManager.resolveBestBackend(this.preferredRuntime);
+          this.assertRuntimeAllowed(backend.type);
           const cwd = args.cwd ? this.resolveWorkspacePath(args.cwd) : this.workspaceRoot;
-          const result = await backend.execute(args.command, args.args || [], { cwd, timeoutMs: 120000 });
+          const result = await backend.execute(command, args.args || [], { cwd, timeoutMs: this.maxTimeoutMs });
           return { success: result.code === 0, output: result.stdout, error: result.code === 0 ? undefined : result.stderr, runtimeUsed: backend.type, exitCode: result.code };
         }
         case 'run_simulation': {
@@ -198,7 +215,8 @@ export class AgentToolGateway {
           const compile = await this.executeRegisteredTool('iverilog', ['-g2012', '-s', args.topModule, '-o', outputRelative, ...files], this.workspaceRoot);
           if (!compile.success || !compile.runtimeUsed) return compile;
           const backend = this.runtimeManager.getBackend(compile.runtimeUsed);
-          const run = await backend.execute('vvp', [outputRelative], { cwd: this.workspaceRoot, timeoutMs: 120000 });
+          this.assertRuntimeAllowed(backend.type);
+          const run = await backend.execute('vvp', [outputRelative], { cwd: this.workspaceRoot, timeoutMs: this.maxTimeoutMs });
           return { success: run.code === 0, output: run.stdout, error: run.code === 0 ? undefined : run.stderr, runtimeUsed: backend.type, exitCode: run.code };
         }
         case 'read_waveform': {
@@ -216,8 +234,9 @@ export class AgentToolGateway {
         }
         case 'git_diff': {
           const backend = await this.runtimeManager.resolveBestBackend(this.preferredRuntime);
+          this.assertRuntimeAllowed(backend.type);
           const diffArgs = ['diff', '--', ...(args.path ? [this.relativeToolPath(args.path)] : [])];
-          const result = await backend.execute('git', diffArgs, { cwd: this.workspaceRoot, timeoutMs: 30000 });
+          const result = await backend.execute('git', diffArgs, { cwd: this.workspaceRoot, timeoutMs: Math.min(this.maxTimeoutMs, 30000) });
           return { success: result.code === 0, output: result.stdout, error: result.code === 0 ? undefined : result.stderr, runtimeUsed: backend.type, exitCode: result.code };
         }
         case 'delete_file': {
