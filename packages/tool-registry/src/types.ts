@@ -7,7 +7,26 @@ export type ToolCategory =
   | 'synthesis'
   | 'formal'
   | 'physical'
+  | 'timing'
+  | 'signoff'
   | 'ai';
+
+export type ToolCapability =
+  | 'systemverilog'
+  | 'vhdl'
+  | 'simulation'
+  | 'coverage'
+  | 'formal'
+  | 'lint'
+  | 'cdc'
+  | 'rdc'
+  | 'synthesis'
+  | 'sta'
+  | 'power'
+  | 'place-route'
+  | 'drc'
+  | 'lvs'
+  | 'waveform';
 
 export interface ToolDefinition {
   id: string;
@@ -15,8 +34,12 @@ export interface ToolDefinition {
   category: ToolCategory;
   binaryName: string;
   versionFlag?: string;
+  probeArgs?: string[];
   supportedRuntimes: Record<RuntimeType, 'supported' | 'preferred' | 'limited' | 'unsupported'>;
   installGuide?: string;
+  vendor?: string;
+  commercial?: boolean;
+  capabilities?: ToolCapability[];
 }
 
 export interface ToolCheckResult {
