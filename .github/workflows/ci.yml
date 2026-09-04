@@ -36,6 +36,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Capture regenerated lockfile
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-pnpm-lock
+          path: pnpm-lock.yaml
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Build all workspaces
         run: pnpm build
 
