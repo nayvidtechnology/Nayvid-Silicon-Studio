@@ -15,12 +15,53 @@ import {
   type NaviSkill,
   type AgentActivityItem,
 } from '@nayvid/ai-core';
-import { OllamaProvider, OpenAIProvider } from '@nayvid/model-providers';
+import {
+  AnthropicProvider,
+  GeminiProvider,
+  OllamaProvider,
+  OpenAIProvider,
+  type ModelProvider,
+} from '@nayvid/model-providers';
 import { AgentToolGateway, type ToolResult } from '@nayvid/agent-tools';
 import { NayvidDoctorService } from '@nayvid/tool-registry';
+import {
+  DesignHealthEngine,
+  FormalAssistant,
+  PpaExplorer,
+  RegisterMapGenerator,
+  TraceabilityMatrix,
+  VerificationCockpit,
+  VerificationPlanGenerator,
+  type DesignHealthInput,
+  type DesignHealthReport,
+  type FormalProperty,
+  type PpaCandidate,
+  type PpaComparisonRow,
+  type PpaWeights,
+  type RegisterMap,
+  type RequirementTrace,
+  type RequirementTraceResult,
+  type VerificationSnapshot,
+  type VerificationSummary,
+} from '@nayvid/engineering-core';
 import type { DesignGraph } from '@nayvid/design-ir';
 
-export type StudioTab = 'rtl' | 'design' | 'schematic' | 'fsm' | 'waveform' | 'navi' | 'verification' | 'doctor';
+export type StudioTab =
+  | 'rtl'
+  | 'design'
+  | 'block-diagram'
+  | 'schematic'
+  | 'fsm'
+  | 'waveform'
+  | 'navi'
+  | 'verification'
+  | 'formal'
+  | 'synthesis'
+  | 'ppa'
+  | 'traceability'
+  | 'register-map'
+  | 'physical'
+  | 'doctor';
 
 export interface StudioState {
   appName: string;
@@ -37,14 +78,50 @@ export interface StudioState {
   selectedSignalContext: SignalIntelligenceContext | null;
 }
 
+export interface SimulationRequest {
+  topModule?: string;
+  files: string[];
+  output?: string;
+  waveformPath: string;
+}
+
+export interface NaviRequestOptions {
+  cloudApproved?: boolean;
+  preferredProviderId?: string;
+  modelName?: string;
+  requireVision?: boolean;
+}
+
+interface AgentGatewayLike {
+  executeTool(name: string, args: Record<string, any>, approved?: boolean): Promise<ToolResult>;
+}
+
+export interface SiliconStudioDependencies {
+  slang?: SlangAdapter;
+  verivisual?: VeriVisualEngine;
+  router?: ModelFabricRouter;
+  contextEngine?: ContextEngine;
+  timelineTracker?: AgentTimelineTracker;
+  agentGateway?: AgentGatewayLike;
+  doctorService?: NayvidDoctorService;
+  modelProviders?: ModelProvider[];
+}
+
 export class SiliconStudioApp {
-  private slang = new SlangAdapter();
-  private verivisual = new VeriVisualEngine();
-  private router = new ModelFabricRouter();
-  private contextEngine = new ContextEngine();
-  private timelineTracker = new AgentTimelineTracker();
-  private agentGateway = new AgentToolGateway();
-  private doctorService = new NayvidDoctorService();
+  private slang: SlangAdapter;
+  private verivisual: VeriVisualEngine;
+  private router: ModelFabricRouter;
+  private contextEngine: ContextEngine;
+  private timelineTracker: AgentTimelineTracker;
+  private agentGateway: AgentGatewayLike;
+  private doctorService: NayvidDoctorService;
+  private verificationCockpit = new VerificationCockpit();
+  private designHealth = new DesignHealthEngine();
+  private traceability = new TraceabilityMatrix();
+  private registerMap = new RegisterMapGenerator();
+  private ppa = new PpaExplorer();
+  private formal = new FormalAssistant();
+  private verificationPlan = new VerificationPlanGenerator();
 
   private state: StudioState = {
     appName: 'Nayvid Silicon Studio',
@@ -61,226 +138,209 @@ export class SiliconStudioApp {
     selectedSignalContext: null,
   };
 
-  constructor() {
-    this.router.registerProvider(new OllamaProvider());
-    this.router.registerProvider(new OpenAIProvider());
+  constructor(deps: SiliconStudioDependencies = {}) {
+    this.slang = deps.slang ?? new SlangAdapter();
+    this.verivisual = deps.verivisual ?? new VeriVisualEngine();
+    this.router = deps.router ?? new ModelFabricRouter();
+    this.contextEngine = deps.contextEngine ?? new ContextEngine();
+    this.timelineTracker = deps.timelineTracker ?? new AgentTimelineTracker();
+    this.agentGateway = deps.agentGateway ?? new AgentToolGateway();
+    this.doctorService = deps.doctorService ?? new NayvidDoctorService();
+
+    const providers = deps.modelProviders ?? [
+      new OllamaProvider(),
+      new OpenAIProvider(),
+      new AnthropicProvider(),
+      new GeminiProvider(),
+    ];
+    for (const provider of providers) this.router.registerProvider(provider);
   }
 
   getIdentity() {
-    return {
-      appName: this.state.appName,
-      tagline: this.state.tagline,
-      icons: SubsystemIcons,
-    };
+    return { appName: this.state.appName, tagline: this.state.tagline, icons: SubsystemIcons };
   }
 
-  setActiveTab(tab: StudioTab): void {
-    this.state.activeTab = tab;
-  }
+  setActiveTab(tab: StudioTab): void { this.state.activeTab = tab; }
+  getActiveTab(): StudioTab { return this.state.activeTab; }
+  setPrivacyPolicy(policy: PrivacyPolicy): void { this.state.privacyPolicy = policy; }
+  getPrivacyPolicy(): PrivacyPolicy { return this.state.privacyPolicy; }
+  setActiveSkill(skill: NaviSkill): void { this.state.activeSkill = skill; }
+  getActiveSkill(): NaviSkill { return this.state.activeSkill; }
 
-  getActiveTab(): StudioTab {
-    return this.state.activeTab;
-  }
-
-  setPrivacyPolicy(policy: PrivacyPolicy): void {
-    this.state.privacyPolicy = policy;
-  }
-
-  getPrivacyPolicy(): PrivacyPolicy {
-    return this.state.privacyPolicy;
-  }
-
-  setActiveSkill(skill: NaviSkill): void {
-    this.state.activeSkill = skill;
-  }
-
-  getActiveSkill(): NaviSkill {
-    return this.state.activeSkill;
-  }
-
-  async openFile(filePath: string, customContent?: string): Promise<DesignGraph> {
+  async openFile(filePath: string, customContent?: string, topModule?: string): Promise<DesignGraph> {
     this.state.activeFilePath = filePath;
     if (customContent !== undefined) {
       this.state.fileContent = customContent;
-    } else if (fs.existsSync(filePath)) {
-      this.state.fileContent = fs.readFileSync(filePath, 'utf-8');
     } else {
-      this.state.fileContent = `module ${this.state.topModule};\n  input logic clk;\n  input logic rst_n;\n  output logic [7:0] count;\nendmodule`;
+      if (!fs.existsSync(filePath)) throw new Error(`HDL file not found: ${filePath}`);
+      this.state.fileContent = fs.readFileSync(filePath, 'utf-8');
     }
 
-    const parseTarget = fs.existsSync(filePath) ? filePath : this.state.fileContent;
-    const graph = await this.slang.parseToIR([parseTarget], this.state.topModule);
+    const graph = await this.slang.parseToIR([this.state.fileContent], topModule ?? this.state.topModule);
+    if (Object.keys(graph.modules).length === 0) throw new Error(`No HDL modules were parsed from ${filePath}`);
     this.state.designGraph = graph;
+    this.state.topModule = graph.topModule;
     return graph;
   }
 
   async loadDesignGraph(): Promise<DesignGraph> {
-    if (!this.state.designGraph) {
-      await this.openFile(this.state.activeFilePath);
-    }
+    if (!this.state.designGraph) await this.openFile(this.state.activeFilePath);
     return this.state.designGraph!;
   }
 
-  async getDesignNavigator(): Promise<{
-    topModule: string;
-    modules: Record<string, {
-      name: string;
-      inputs: string[];
-      outputs: string[];
-      registers: string[];
-      fsms: string[];
-      clockDomains: string[];
-      resetDomains: string[];
-      instances: string[];
-    }>;
-  }> {
+  async getDesignNavigator() {
     const graph = await this.loadDesignGraph();
-    const result: Record<string, any> = {};
-
-    Object.entries(graph.modules).forEach(([modName, mod]) => {
-      result[modName] = {
+    const modules: Record<string, any> = {};
+    for (const [modName, mod] of Object.entries(graph.modules)) {
+      modules[modName] = {
         name: mod.name,
-        inputs: mod.ports.filter((p) => p.direction === 'input').map((p) => `${p.name} [${p.width - 1}:0]`),
-        outputs: mod.ports.filter((p) => p.direction === 'output').map((p) => `${p.name} [${p.width - 1}:0]`),
-        registers: mod.signals.filter((s) => s.isRegister).map((s) => `${s.name} [${s.width - 1}:0]`),
+        inputs: mod.ports.filter((p) => p.direction === 'input').map((p) => `${p.name} [${Math.max(0, p.width - 1)}:0]`),
+        outputs: mod.ports.filter((p) => p.direction === 'output').map((p) => `${p.name} [${Math.max(0, p.width - 1)}:0]`),
+        registers: mod.signals.filter((s) => s.isRegister).map((s) => `${s.name} [${Math.max(0, s.width - 1)}:0]`),
         fsms: mod.fsms.map((f) => f.name),
         clockDomains: mod.clockDomains,
         resetDomains: mod.resetDomains,
         instances: mod.instances.map((i) => `${i.name}: ${i.moduleName}`),
       };
-    });
-
-    return {
-      topModule: graph.topModule,
-      modules: result,
-    };
+    }
+    return { topModule: graph.topModule, modules };
   }
 
   async getBlockDiagram(): Promise<BlockDiagramModel> {
     const graph = await this.loadDesignGraph();
-    return this.verivisual.generateBlockDiagram(graph, this.state.topModule);
+    return this.verivisual.generateBlockDiagram(graph, graph.topModule);
   }
 
-  async runSimulation(testName: string = 'tb_counter'): Promise<WaveformModel> {
-    const toolRes = await this.agentGateway.executeTool('run_simulation', {
-      testName,
-      topModule: this.state.topModule,
-    });
-
-    this.timelineTracker.addActivity({
+  async runSimulation(request: SimulationRequest): Promise<WaveformModel> {
+    const topModule = request.topModule ?? this.state.topModule;
+    const activity = this.timelineTracker.addActivity({
       skill: 'verification-engineer',
       toolName: 'run_simulation',
-      arguments: { testName, topModule: this.state.topModule },
-      status: 'completed',
-      output: toolRes.output,
+      arguments: { topModule, files: request.files, output: request.output },
+      status: 'started',
     });
 
-    const vcdRes = await this.agentGateway.executeTool('read_waveform', { path: 'sim.vcd' });
-    const waveModel = vcdRes.output as WaveformModel;
-    this.state.waveform = waveModel;
-    return waveModel;
+    const toolRes = await this.agentGateway.executeTool('run_simulation', {
+      topModule,
+      files: request.files,
+      output: request.output,
+    });
+    if (!toolRes.success) {
+      this.timelineTracker.updateActivity(activity.id, { status: 'failed', output: toolRes.error });
+      throw new Error(toolRes.error || 'Simulation failed');
+    }
+    this.timelineTracker.updateActivity(activity.id, { status: 'completed', output: toolRes.output });
+
+    const vcdRes = await this.agentGateway.executeTool('read_waveform', { path: request.waveformPath });
+    if (!vcdRes.success) {
+      throw new Error(vcdRes.error || `Simulation completed but waveform '${request.waveformPath}' was not available.`);
+    }
+    const wave = vcdRes.output as WaveformModel;
+    this.state.waveform = wave;
+    return wave;
   }
 
   getWaveform(): WaveformModel {
-    if (!this.state.waveform) {
-      this.state.waveform = this.verivisual.parseVcd('');
-    }
-    return this.state.waveform;
+    return this.state.waveform ?? { timescale: '1ns', signals: [], startTimeNs: 0, endTimeNs: 0 };
   }
 
   async inspectSignal(signalName: string, atTimeNs?: number): Promise<SignalIntelligenceContext> {
     const graph = await this.loadDesignGraph();
-    const wave = this.getWaveform();
-    const context = this.verivisual.getSignalContext(signalName, graph, wave, atTimeNs);
+    const context = this.verivisual.getSignalContext(signalName, graph, this.state.waveform ?? undefined, atTimeNs);
     this.state.selectedSignal = signalName;
     this.state.selectedSignalContext = context;
-
     this.timelineTracker.addActivity({
-      skill: 'waveform-debugger',
-      toolName: 'inspect_signal',
-      arguments: { signalName, atTimeNs },
-      status: 'completed',
-      output: context,
+      skill: 'waveform-debugger', toolName: 'inspect_signal', arguments: { signalName, atTimeNs }, status: 'completed', output: context,
     });
-
     return context;
   }
 
-  async askNavi(
-    query: string,
-    skill: NaviSkill = this.state.activeSkill
-  ): Promise<{
-    answer: string;
-    contextUsed: string;
-    timeline: AgentActivityItem[];
-  }> {
+  async askNavi(query: string, skill: NaviSkill = this.state.activeSkill, options: NaviRequestOptions = {}) {
     const graph = await this.loadDesignGraph();
     const promptCtx = this.contextEngine.buildPromptContext({
       activeFile: { path: this.state.activeFilePath, content: this.state.fileContent },
       designGraph: graph,
+      selectedSignal: this.state.selectedSignal ?? undefined,
     });
 
-    this.timelineTracker.addActivity({
-      skill,
-      toolName: 'read_file',
-      arguments: { path: this.state.activeFilePath },
-      status: 'completed',
-      output: `Read ${this.state.activeFilePath}`,
-    });
-
-    this.timelineTracker.addActivity({
-      skill,
-      toolName: 'inspect_module',
-      arguments: { moduleName: graph.topModule },
-      status: 'completed',
-      output: `Inspected DesignGraph for ${graph.topModule}`,
-    });
-
-    const provider = this.router.selectProvider(this.state.privacyPolicy);
-    const chatRes = await provider.chat([
-      { role: 'system', content: `You are NAVI, specialist skill: ${skill}. ${promptCtx}` },
+    this.timelineTracker.addActivity({ skill, toolName: 'inspect_design_context', arguments: { topModule: graph.topModule }, status: 'completed', output: 'Context assembled' });
+    const provider = this.router.selectProvider(
+      this.state.privacyPolicy,
+      options.requireVision ?? false,
+      options.cloudApproved ?? false,
+      options.preferredProviderId
+    );
+    const response = await provider.chat([
+      { role: 'system', content: `You are NAVI, specialist skill: ${skill}.\n\n${promptCtx}` },
       { role: 'user', content: query },
-    ]);
+    ], options.modelName);
 
-    return {
-      answer: chatRes.message.content,
-      contextUsed: promptCtx,
-      timeline: this.timelineTracker.getTimeline(),
-    };
+    return { answer: response.message.content, contextUsed: promptCtx, providerId: provider.id, toolCalls: response.toolCalls, timeline: this.timelineTracker.getTimeline() };
   }
 
-  async executeToolWithApproval(
-    toolName: string,
-    args: Record<string, any>,
-    approved: boolean = false
-  ): Promise<ToolResult> {
-    const activity = this.timelineTracker.addActivity({
-      skill: this.state.activeSkill,
-      toolName,
-      arguments: args,
-      status: approved ? 'approved' : 'started',
-    });
-
+  async executeToolWithApproval(toolName: string, args: Record<string, any>, approved = false): Promise<ToolResult> {
+    const activity = this.timelineTracker.addActivity({ skill: this.state.activeSkill, toolName, arguments: args, status: approved ? 'approved' : 'started' });
     const result = await this.agentGateway.executeTool(toolName, args, approved);
-
-    activity.status = result.success ? 'completed' : result.requiresApproval ? 'started' : 'failed';
-    activity.output = result.output || result.error;
-
+    this.timelineTracker.updateActivity(activity.id, {
+      status: result.success ? 'completed' : result.requiresApproval ? 'started' : 'failed',
+      output: result.output ?? result.error,
+    });
     return result;
   }
 
-  getTimeline(): AgentActivityItem[] {
-    return this.timelineTracker.getTimeline();
+  getVerificationSummary(snapshot: VerificationSnapshot): VerificationSummary {
+    return this.verificationCockpit.summarize(snapshot);
   }
 
-  async runDoctorDiagnostics() {
-    return await this.doctorService.runDiagnostics();
+  getDesignHealth(input: DesignHealthInput): DesignHealthReport {
+    if (this.state.designGraph) {
+      const graphChecks = this.designHealth.fromDesignGraph(this.state.designGraph);
+      input = {
+        ...input,
+        cdcIssues: input.cdcIssues ?? graphChecks.cdcIssues,
+        combinationalLoops: input.combinationalLoops ?? graphChecks.combinationalLoops,
+      };
+    }
+    return this.designHealth.evaluate(input);
   }
+
+  analyzeTraceability(requirements: RequirementTrace[]): RequirementTraceResult[] {
+    return this.traceability.analyze(requirements);
+  }
+
+  generateRegisterArtifacts(map: RegisterMap) {
+    return {
+      validation: this.registerMap.validate(map),
+      systemVerilog: this.registerMap.generateSystemVerilogPackage(map),
+      cHeader: this.registerMap.generateCHeader(map),
+      rust: this.registerMap.generateRust(map),
+      markdown: this.registerMap.generateMarkdown(map),
+    };
+  }
+
+  comparePpa(baseline: PpaCandidate, candidates: PpaCandidate[], weights?: PpaWeights): PpaComparisonRow[] {
+    return this.ppa.compare(baseline, candidates, weights);
+  }
+
+  generateFormalProperty(kind: 'fifo-underflow' | 'fifo-overflow' | 'eventual-response', args: Record<string, any> = {}): FormalProperty {
+    if (kind === 'fifo-underflow') return this.formal.fifoNoUnderflow(args.clock, args.reset, args.readEnable, args.empty);
+    if (kind === 'fifo-overflow') return this.formal.fifoNoOverflow(args.clock, args.reset, args.writeEnable, args.full);
+    return this.formal.eventualResponse(args.request ?? 'req', args.response ?? 'ack', args.maxCycles ?? 8, args.clock, args.reset);
+  }
+
+  async generateVerificationPlan(): Promise<string[]> {
+    return this.verificationPlan.fromDesignGraph(await this.loadDesignGraph());
+  }
+
+  getTimeline(): AgentActivityItem[] { return this.timelineTracker.getTimeline(); }
+  clearTimeline(): void { this.timelineTracker.clear(); }
+  async runDoctorDiagnostics() { return this.doctorService.runDiagnostics(); }
 
   getPromptContext(): string {
     return this.contextEngine.buildPromptContext({
       activeFile: { path: this.state.activeFilePath, content: this.state.fileContent },
-      designGraph: this.state.designGraph || undefined,
+      designGraph: this.state.designGraph ?? undefined,
+      selectedSignal: this.state.selectedSignal ?? undefined,
     });
   }
 }
