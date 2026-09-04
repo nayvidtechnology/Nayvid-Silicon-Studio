@@ -1,0 +1,22 @@
+{
+  "name": "nayvid-renderer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nayvid/design-ir": "workspace:*",
+    "@nayvid/hdl-language": "workspace:*",
+    "@nayvid/verivisual": "workspace:*",
+    "@nayvid/ai-core": "workspace:*",
+    "@nayvid/model-providers": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

@@ -1,0 +1,10 @@
+# nayvid.project.yaml
+project:
+  name: axi-peripheral
+  top: axi_lite_timer
+
+sources:
+  - rtl/*.sv
+
+synthesis:
+  engine: ecc

@@ -1,0 +1,22 @@
+{
+  "name": "nayvid-desktop-electron",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nayvid/execution-runtime": "workspace:*",
+    "@nayvid/tool-registry": "workspace:*",
+    "@nayvid/ai-core": "workspace:*",
+    "@nayvid/model-providers": "workspace:*",
+    "@nayvid/agent-tools": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

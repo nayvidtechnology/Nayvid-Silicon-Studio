@@ -1,0 +1,21 @@
+# nayvid.project.yaml
+project:
+  name: counter-demo
+  top: counter
+
+sources:
+  - rtl/counter.sv
+
+tests:
+  - name: tb_counter
+    type: verilator
+    path: tb/tb_counter.cpp
+
+simulation:
+  engine: verilator
+
+synthesis:
+  engine: yosys
+
+ai:
+  policy: ask-before-cloud

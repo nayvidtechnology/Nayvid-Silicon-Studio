@@ -1,0 +1,13 @@
+# nayvid.project.yaml
+project:
+  name: uart-demo
+  top: uart_top
+
+sources:
+  - rtl/*.sv
+
+simulation:
+  engine: iverilog
+
+synthesis:
+  engine: yosys

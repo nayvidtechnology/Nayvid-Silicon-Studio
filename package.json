@@ -1,0 +1,20 @@
+{
+  "name": "nayvid-silicon-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source AI-native IDE for RTL, verification, FPGA/ASIC design, and RTL-to-GDS",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "pnpm --recursive run build",
+    "test": "pnpm --recursive run test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}
