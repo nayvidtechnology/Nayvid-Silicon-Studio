@@ -4,6 +4,10 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./reproducibility": "./dist/reproducibility.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
