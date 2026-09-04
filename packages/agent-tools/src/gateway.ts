@@ -40,6 +40,10 @@ function walkFiles(root: string, acc: string[] = []): string[] {
   return acc;
 }
 
+function normalizeWorkspacePath(value: string): string {
+  return value.replace(/\\/g, '/');
+}
+
 export class AgentToolGateway {
   private slang = new SlangAdapter();
   private verivisual = new VeriVisualEngine();
@@ -64,7 +68,7 @@ export class AgentToolGateway {
 
   private relativeToolPath(input: string): string {
     const absolute = this.resolveWorkspacePath(input);
-    return path.relative(this.workspaceRoot, absolute).replace(/\\/g, '/');
+    return normalizeWorkspacePath(path.relative(this.workspaceRoot, absolute));
   }
 
   private async executeRegisteredTool(toolId: string, args: string[], cwd?: string): Promise<ToolResult> {
@@ -126,7 +130,13 @@ export class AgentToolGateway {
             let text: string;
             try { text = fs.readFileSync(file, 'utf-8'); } catch { continue; }
             text.split(/\r?\n/).forEach((line, index) => {
-              if (line.includes(query) && matches.length < 200) matches.push({ path: path.relative(this.workspaceRoot, file), line: index + 1, text: line.trim() });
+              if (line.includes(query) && matches.length < 200) {
+                matches.push({
+                  path: normalizeWorkspacePath(path.relative(this.workspaceRoot, file)),
+                  line: index + 1,
+                  text: line.trim(),
+                });
+              }
             });
             if (matches.length >= 200) break;
           }
@@ -184,7 +194,7 @@ export class AgentToolGateway {
           const outputInput = String(args.output || '.nayvid/sim/sim.out');
           const outputAbsolute = this.resolveWorkspacePath(outputInput);
           fs.mkdirSync(path.dirname(outputAbsolute), { recursive: true });
-          const outputRelative = path.relative(this.workspaceRoot, outputAbsolute).replace(/\\/g, '/');
+          const outputRelative = normalizeWorkspacePath(path.relative(this.workspaceRoot, outputAbsolute));
           const compile = await this.executeRegisteredTool('iverilog', ['-g2012', '-s', args.topModule, '-o', outputRelative, ...files], this.workspaceRoot);
           if (!compile.success || !compile.runtimeUsed) return compile;
           const backend = this.runtimeManager.getBackend(compile.runtimeUsed);
