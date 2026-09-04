@@ -143,8 +143,9 @@ export class StudioProductionController {
       exitCode: result.exitCode,
     }, null, 2);
     const evidence = this.attachEvidence(role, actor, run.id, `${input.kind}-${run.id}.json`, evidenceBody, 'application/json');
+    const concreteRuntime = result.runtimeUsed && result.runtimeUsed !== 'auto' ? result.runtimeUsed : undefined;
     session.runs.update(run.id, {
-      runtime: result.runtimeUsed,
+      runtime: concreteRuntime,
       stdoutDigest: result.success ? evidence.digest : undefined,
       stderrDigest: result.success ? undefined : evidence.digest,
     });
