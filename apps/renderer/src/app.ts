@@ -176,7 +176,7 @@ export class SiliconStudioApp {
       this.state.fileContent = fs.readFileSync(filePath, 'utf-8');
     }
 
-    const graph = await this.slang.parseToIR([this.state.fileContent], topModule ?? this.state.topModule);
+    const graph = await this.slang.parseContentToIR(this.state.fileContent, filePath, topModule ?? this.state.topModule);
     if (Object.keys(graph.modules).length === 0) throw new Error(`No HDL modules were parsed from ${filePath}`);
     this.state.designGraph = graph;
     this.state.topModule = graph.topModule;
