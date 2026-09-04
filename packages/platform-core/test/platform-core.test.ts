@@ -65,11 +65,14 @@ describe('production platform core', () => {
   });
 
   it('persists run state transitions to an append-only ledger', () => {
-    const ledger = new RunLedger(tempRoot());
+    const root = tempRoot();
+    const ledger = new RunLedger(root);
     const run = ledger.begin({ kind: 'simulation', projectDigest: 'p', toolchainDigest: 't', command: 'iverilog', args: ['top.sv'], cwd: '.' });
     const done = ledger.finish(run.id, { status: 'passed', exitCode: 0 });
     expect(done.status).toBe('passed');
-    expect(new RunLedger((ledger as any).root ?? '').list).not.toBeUndefined();
+    const reopened = new RunLedger(root);
+    expect(reopened.get(run.id)?.status).toBe('passed');
+    expect(reopened.list()).toHaveLength(1);
   });
 
   it('detects audit-log tampering using a hash chain', () => {
