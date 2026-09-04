@@ -21,7 +21,7 @@ function makeProject(): { root: string; manifestPath: string } {
 }
 
 describe('Studio production workflow', () => {
-  it('opens project authority, records evidence, blocks weak signoff and enforces RBAC', () => {
+  it('opens project authority, records evidence, blocks weak readiness and enforces RBAC', () => {
     const { manifestPath } = makeProject();
     const studio = new StudioProductionController();
     const session = studio.openProject(manifestPath, 'alice');
@@ -34,7 +34,7 @@ describe('Studio production workflow', () => {
 
     const weak = studio.readiness('viewer', [{ toolId: 'slang', installed: true, version: '9.1.0', runtime: 'linux' }], { compilePassed: true, simulationPassed: false, coveragePercent: 60, cdcIssues: 2 });
     expect(weak.signoff.passed).toBe(false);
-    expect(() => studio.approveSignoff('engineer', 'alice', [], {})).toThrow('not authorized');
+    expect(() => studio.approveSignoff('engineer', 'alice', [], [])).toThrow('not authorized');
     expect(session.audit.verify()).toBe(true);
   });
 
@@ -63,5 +63,27 @@ describe('Studio production workflow', () => {
     expect(evidence).toContain('PASS');
     expect(evidence).not.toContain('supersecret');
     expect(session.audit.verify()).toBe(true);
+  });
+
+  it('approves signoff only from recorded passing runs and integrity-checked metric artifacts', () => {
+    const { manifestPath } = makeProject();
+    const studio = new StudioProductionController();
+    const session = studio.openProject(manifestPath, 'lead-user');
+    const probes = [{ toolId: 'slang', installed: true, version: '9.1.0', runtime: 'linux' as const }];
+    const toolchain = session.toolchains.check(session.manifest, probes);
+
+    const compile = studio.beginRun('engineer', 'ci-bot', { kind: 'compile', toolchainDigest: toolchain.digest, command: 'slang', args: ['rtl/top.sv'] });
+    studio.finishRun('engineer', 'ci-bot', compile.id, 'passed', 0);
+    const simulation = studio.beginRun('engineer', 'ci-bot', { kind: 'simulation', toolchainDigest: toolchain.digest, command: 'iverilog', args: ['rtl/top.sv'] });
+    studio.finishRun('engineer', 'ci-bot', simulation.id, 'passed', 0);
+
+    const coverage = studio.recordMetricEvidence('engineer', 'ci-bot', 'coverage', 96.4, simulation.id, 'coverage-tool');
+    const cdc = studio.recordMetricEvidence('engineer', 'ci-bot', 'cdc', 0, compile.id, 'cdc-tool');
+    const approval = studio.approveSignoff('lead', 'lead-user', probes, [coverage, cdc]);
+
+    expect(approval.signoff.passed).toBe(true);
+    expect(approval.blockers).toEqual([]);
+    expect(session.audit.verify()).toBe(true);
+    expect(session.audit.read().at(-1)?.action).toBe('signoff:approve');
   });
 });
