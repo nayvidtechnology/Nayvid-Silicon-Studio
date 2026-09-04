@@ -14,6 +14,13 @@ export interface DesignPort {
   location?: SourceLocation;
 }
 
+export interface DesignDriverExpression {
+  expression: string;
+  dependencies: string[];
+  sequential: boolean;
+  location: SourceLocation;
+}
+
 export interface DesignSignal {
   name: string;
   width: number;
@@ -22,6 +29,10 @@ export interface DesignSignal {
   resetDomain?: string;
   drivers: SourceLocation[];
   loads: SourceLocation[];
+  /** Structured driver information used by VeriVisual/NAVI signal tracing. */
+  driverExpressions?: DesignDriverExpression[];
+  /** Direct data/control dependencies discovered while parsing RTL. */
+  dependsOn?: string[];
   location?: SourceLocation;
 }
 
@@ -41,6 +52,7 @@ export interface FSMTransition {
   from: string;
   to: string;
   condition?: string;
+  location?: SourceLocation;
 }
 
 export interface DesignFSM {

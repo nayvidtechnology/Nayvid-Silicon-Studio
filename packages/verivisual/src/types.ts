@@ -28,38 +28,39 @@ export interface WaveformSignalValue {
 
 export interface WaveformSignal {
   name: string;
+  fullName?: string;
+  width?: number;
+  type?: string;
   wave: WaveformSignalValue[];
 }
 
 export interface WaveformModel {
   timescale: string;
   signals: WaveformSignal[];
+  startTimeNs?: number;
+  endTimeNs?: number;
 }
 
 export class VeriVisualEngine {
   generateBlockDiagram(graph: DesignGraph, moduleName?: string): BlockDiagramModel {
     const targetModule = graph.modules[moduleName || graph.topModule];
-    if (!targetModule) {
-      return { nodes: [], edges: [] };
-    }
+    if (!targetModule) return { nodes: [], edges: [] };
 
-    const nodes: VisualNode[] = [
-      { id: targetModule.name, label: targetModule.name, type: 'module' },
-    ];
+    const nodes: VisualNode[] = [{ id: targetModule.name, label: targetModule.name, type: 'module' }];
     const edges: VisualEdge[] = [];
 
     for (const port of targetModule.ports) {
       const portId = `${targetModule.name}.${port.name}`;
-      nodes.push({ id: portId, label: port.name, type: 'port', data: { direction: port.direction } });
-      if (port.direction === 'input') {
-        edges.push({ id: `e_${portId}`, source: portId, target: targetModule.name });
-      } else {
-        edges.push({ id: `e_${portId}`, source: targetModule.name, target: portId });
-      }
+      nodes.push({ id: portId, label: port.name, type: 'port', data: { direction: port.direction, width: port.width } });
+      edges.push({
+        id: `e_${portId}`,
+        source: port.direction === 'input' ? portId : targetModule.name,
+        target: port.direction === 'input' ? targetModule.name : portId,
+      });
     }
 
     for (const inst of targetModule.instances) {
-      nodes.push({ id: inst.name, label: `${inst.name}: ${inst.moduleName}`, type: 'module' });
+      nodes.push({ id: inst.name, label: `${inst.name}: ${inst.moduleName}`, type: 'module', data: { connections: inst.portConnections } });
       edges.push({ id: `e_${targetModule.name}_${inst.name}`, source: targetModule.name, target: inst.name });
     }
 
@@ -74,12 +75,7 @@ export class VeriVisualEngine {
     return parseVcd(vcdContent);
   }
 
-  getSignalContext(
-    signalName: string,
-    graph: DesignGraph,
-    waveform?: WaveformModel,
-    atTimeNs?: number
-  ): SignalIntelligenceContext {
+  getSignalContext(signalName: string, graph: DesignGraph, waveform?: WaveformModel, atTimeNs?: number): SignalIntelligenceContext {
     return extractSignalIntelligence(signalName, graph, waveform, atTimeNs);
   }
 }

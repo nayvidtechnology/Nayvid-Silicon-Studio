@@ -4,6 +4,7 @@
   "private": true,
   "description": "Open-source AI-native IDE for RTL, verification, FPGA/ASIC design, and RTL-to-GDS",
   "license": "MIT",
+  "packageManager": "pnpm@10.18.3",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -11,6 +12,7 @@
   "scripts": {
     "build": "pnpm --recursive run build",
     "test": "pnpm --recursive run test",
+    "check": "pnpm build && pnpm test",
     "start": "node ./apps/renderer/dist/index.js",
     "desktop": "pnpm --filter nayvid-desktop-electron start",
     "dist": "pnpm build && pnpm --filter nayvid-desktop-electron dist"

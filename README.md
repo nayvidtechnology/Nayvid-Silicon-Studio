@@ -1,115 +1,162 @@
 # Nayvid Silicon Studio
 
 <p align="center">
-  <img src="docs/asset/demo.png" alt="Nayvid Silicon Studio Demo UI" width="900" style="border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);" />
+  <img src="docs/asset/demo.png" alt="Nayvid Silicon Studio Demo UI" width="900" />
 </p>
 
 <p align="center">
-  <strong>Open-source AI-native IDE for RTL, verification, FPGA/ASIC design, and RTL-to-GDS</strong>
+  <strong>Open-source AI-native IDE for RTL, verification, FPGA/ASIC design, and silicon implementation</strong>
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#architecture--subsystems">Architecture</a> •
-  <a href="docs/tutorial.md">Full Tutorial</a> •
-  <a href="#desktop-gui-and-release">Releases</a> •
-  <a href="#license">License</a>
+  <strong>Design. Verify. Visualize. Build Silicon.</strong>
 </p>
 
 ---
 
 ## Overview
 
-**Nayvid Silicon Studio** is a next-generation visual and agentic silicon engineering workbench. It unifies open-source EDA toolchains (Slang, Verilator, Yosys, OpenROAD, Cocotb, Surfer) into a cohesive desktop development environment powered by specialized AI agents and visual debuggers.
+**Nayvid Silicon Studio** is a local-first visual and agentic silicon engineering workbench. It combines a desktop IDE, structured RTL design intelligence, deterministic EDA execution, waveform analysis, verification utilities, and privacy-aware AI model routing.
 
-### Key Capabilities
+The product is designed for:
 
-* 📐 **Visual RTL & Schematic Studio**: Interactive VeriVisual block diagrams, schematics, and FSM transition graphs generated from SystemVerilog.
-* 📊 **Waveform Viewer**: Cycle-accurate digital timing diagram viewer with multi-channel bus transitions and signal tracing.
-* 🤖 **NAVI AI Copilot**: Agentic AI assistant with specialist skills (`waveform-debugger`, `rtl-engineer`, `verification-engineer`, `pnr-specialist`) and multi-turn execution tracking.
-* 🔍 **Signal Intelligence**: Automated driver/load dependency extraction and root-cause failure analysis.
-* 🩺 **Nayvid Doctor**: Real-time environment diagnostics for local EDA toolchains across Native Windows, WSL2, Linux, and Docker backends.
+- **Windows native** where a tool has a supported Windows build
+- **Windows + WSL2** for Linux-first EDA flows
+- **Linux native**
+- **Docker** as an additional execution backend
 
----
+The Studio does not report a tool operation as successful unless the underlying operation succeeds. Missing tools, missing files, failed simulations, and unavailable waveforms are surfaced as failures instead of being replaced with demo data.
 
-## Architecture & Subsystems
+## Key Capabilities
 
-| Subsystem | Package | Description |
-| :--- | :--- | :--- |
-| **VeriVisual** | `@nayvid/verivisual` | Visual schematic, block diagram, waveform parser, and signal intelligence engine |
-| **NAVI Agent** | `@nayvid/ai-core` | Multi-specialist AI agent, context engine, and timeline tracker |
-| **Model Fabric Router** | `@nayvid/model-providers` | Privacy-aware provider routing (Ollama local, OpenAI, Gemini) |
-| **Design Graph IR** | `@nayvid/design-ir` | Unified AST & graph IR for modules, ports, registers, clock/reset domains, and FSMs |
-| **Flow Runtime** | `@nayvid/execution-runtime` | Multi-backend execution engine (Native Windows, WSL2, Docker) |
-| **Tool Registry & Doctor** | `@nayvid/tool-registry` | EDA compiler/simulator registry and self-healing diagnostic engine |
-| **Agent Tools Gateway** | `@nayvid/agent-tools` | Safe tool invocation gateway with approval guardrails |
-| **Desktop Electron** | `apps/desktop-electron` | Native cross-platform desktop application shell |
-| **Studio Workbench** | `apps/renderer` | Modern dark-mode multi-tab IDE interface |
+- **VeriVisual** — block-diagram models, VCD parsing, hierarchical waveform metadata, and signal intelligence.
+- **NAVI** — specialist AI workflows with workspace context, privacy policy enforcement, tool approval guardrails, and execution timeline.
+- **Design Graph IR** — modules, ports, signals, driver expressions, dependencies, instances, FSMs, source locations, clock domains, and reset domains.
+- **Verification Cockpit** — regression/assertion summaries, coverage scoring, and uncovered-area identification.
+- **Design Health** — weighted compile/lint/simulation/assertion/coverage/CDC/constraint/timing health assessment.
+- **Traceability Matrix** — requirement → RTL → test → assertion coverage and gap analysis.
+- **Register Map Generator** — validation plus SystemVerilog package, C header, Rust constants, and Markdown generation.
+- **Formal Assistant** — reusable SVA helpers such as FIFO underflow/overflow and bounded request/response properties.
+- **PPA Explorer** — area/power/performance/timing comparison and candidate ranking.
+- **Verification Plan Generator** — DesignGraph-derived verification objectives.
+- **Nayvid Doctor** — real tool detection through compatible Native Windows, WSL2, Linux, or Docker runtimes.
 
----
+## Architecture & Packages
+
+| Subsystem | Package | Purpose |
+|---|---|---|
+| VeriVisual | `@nayvid/verivisual` | Block diagrams, VCD/waveform parsing, signal intelligence |
+| NAVI AI Core | `@nayvid/ai-core` | Context engine, privacy-aware routing, agent timeline |
+| Model Providers | `@nayvid/model-providers` | OpenAI, Anthropic, Gemini, and Ollama API adapters |
+| Design Graph IR | `@nayvid/design-ir` | Shared structured representation for silicon design intelligence |
+| HDL Language | `@nayvid/hdl-language` | SystemVerilog source extraction and structural lint support |
+| Flow Runtime | `@nayvid/execution-runtime` | Native Windows / WSL2 / Linux / Docker execution abstraction |
+| Tool Registry & Doctor | `@nayvid/tool-registry` | Runtime-aware EDA capability registry and diagnostics |
+| Agent Tool Gateway | `@nayvid/agent-tools` | Workspace-confined EDA/file tools and approval gates |
+| Engineering Core | `@nayvid/engineering-core` | Verification, health, traceability, registers, PPA, formal helpers |
+| Desktop Electron | `apps/desktop-electron` | Secure desktop process and IPC bridge |
+| Studio Workbench | `apps/renderer` | Interactive Silicon Studio application logic and UI |
+
+## Registered Open-Source Toolchain
+
+Nayvid Doctor knows about the following tool families and selects only compatible runtimes:
+
+- Language: **slang**, **Verible**
+- Simulation/verification: **Icarus Verilog**, **Verilator**, **GHDL**, **cocotb**, **Surfer**
+- Synthesis/FPGA: **Yosys**, **nextpnr**
+- Formal: **SymbiYosys**
+- Physical/timing: **OpenROAD**, **OpenSTA**, **KLayout**
+- Local AI: **Ollama**
+
+The EDA tools are optional external dependencies; the repository test suite uses deterministic fake backends for tool-contract tests and a separate real Icarus smoke test in CI.
 
 ## Quick Start
 
-### Step 1: Install Dependencies
 ```bash
-# Install pnpm workspace dependencies
 pnpm install
-```
-
-### Step 2: Build Workspace Packages
-```bash
-# Compile TypeScript across all 11 packages and apps
 pnpm build
-```
-
-### Step 3: Run the Verification Test Suite
-```bash
-# Execute unit and integration tests
 pnpm test
 ```
 
-### Step 4: Launch the Native Desktop GUI IDE
+Run the complete repository check:
+
 ```bash
-# Open the Native Electron Desktop Studio Window
-pnpm run desktop
+pnpm check
 ```
 
-### Step 5: Run Studio Engine CLI Pipeline (Optional)
+Launch the desktop application:
+
 ```bash
-# Run the end-to-end studio pipeline in terminal
+pnpm desktop
+```
+
+Run the terminal demonstration pipeline (requires the tools used by that flow, including Icarus for simulation):
+
+```bash
 pnpm start
 ```
 
----
-
-## Desktop GUI and Release
-
-### Standalone Distribution Packaging
-To build a standalone Windows executable (`.exe`):
+Live model calls are opt-in for the CLI demo:
 
 ```bash
-pnpm run dist
+NAYVID_CLI_AI=1 pnpm start
 ```
 
-The output standalone binary is packaged into:
+## AI Providers and Privacy
+
+Supported provider adapters:
+
+- OpenAI — `OPENAI_API_KEY`
+- Anthropic — `ANTHROPIC_API_KEY`
+- Google Gemini — `GEMINI_API_KEY`
+- Ollama — local endpoint, default `http://localhost:11434`
+
+Workspace policies:
+
+- `local-only`
+- `ask-before-cloud`
+- `cloud-allowed`
+- `ai-disabled`
+
+`ask-before-cloud` does not silently send RTL to a cloud provider. It uses a local provider when available or requires explicit cloud approval for the request.
+
+## Real Counter Verification Demo
+
+The repository contains a real SystemVerilog counter testbench:
+
 ```text
-apps/desktop-electron/release/win-unpacked/Nayvid Silicon Studio.exe
+examples/counter/rtl/counter.sv
+examples/counter/tb/counter_tb.sv
 ```
 
----
+The CI smoke flow compiles it using Icarus Verilog, executes it with `vvp`, checks the PASS result, and verifies that a non-empty `sim.vcd` was generated.
 
-## User Guide & Tutorials
+## Testing Strategy
 
-For a complete step-by-step walkthrough covering:
-- Creating custom projects with `nayvid.project.yaml`
-- Writing and syntax-checking SystemVerilog RTL
-- Inspecting VeriVisual block diagrams & waveforms
-- Debugging with NAVI AI Copilot and Signal Intelligence
-- Running Nayvid Doctor diagnostics
+CI runs on **Ubuntu and Windows** using Node.js 22 and includes:
 
-👉 **Read the [Complete User Tutorial (docs/tutorial.md)](docs/tutorial.md)**.
+1. TypeScript builds for all workspace packages/apps.
+2. Unit tests for pure domain logic.
+3. Runtime-contract tests using injected execution backends.
+4. Agent gateway safety and real-command invocation tests.
+5. Provider HTTP contract/error tests without live cloud credentials.
+6. Desktop IPC/workspace-confinement tests.
+7. Renderer/cockpit integration tests with deterministic provider/tool injection.
+8. A real Ubuntu Icarus → `vvp` → VCD smoke test.
 
----
+## Desktop Distribution
+
+The Electron package can be built through:
+
+```bash
+pnpm dist
+```
+
+Packaging support will continue to evolve independently from EDA runtime support; on Windows, Linux-first tools can still execute through WSL2 or Docker when their registry policy requires it.
+
+## Documentation
+
+See [docs/tutorial.md](docs/tutorial.md) for the current tutorial.
 
 ## License
 

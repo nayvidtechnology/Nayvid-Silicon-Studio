@@ -12,13 +12,13 @@ export async function main() {
 
   console.log(`\n[*] App: ${identity.appName}`);
   console.log(`[*] Tagline: ${identity.tagline}`);
-  console.log(`[*] Subsystems: VeriVisual, NAVI Agent, Nayvid Doctor, Flow Runtime, Design Graph IR\n`);
+  console.log('[*] Subsystems: VeriVisual, NAVI Agent, Nayvid Doctor, Flow Runtime, Design Graph IR\n');
 
   console.log('--- Step 1: Running Nayvid Doctor Diagnostics ---');
   const doctor = await app.runDoctorDiagnostics();
   console.log(`  Total Tool Checks: ${doctor.summary.total} (Installed/Passed: ${doctor.summary.passed}, Missing: ${doctor.summary.failed})`);
 
-  console.log('\n--- Step 2: Opening SystemVerilog RTL Design (examples/counter/rtl/counter.sv) ---');
+  console.log('\n--- Step 2: Opening SystemVerilog RTL Design ---');
   const graph = await app.openFile('examples/counter/rtl/counter.sv');
   console.log(`  Top Module: ${graph.topModule}`);
   console.log(`  Modules Loaded: ${Object.keys(graph.modules).join(', ')}`);
@@ -39,10 +39,15 @@ export async function main() {
   console.log(`  Visual Nodes: ${diagram.nodes.map((n) => `${n.label} (${n.type})`).join(', ')}`);
   console.log(`  Visual Edges: ${diagram.edges.length} connections routed`);
 
-  console.log('\n--- Step 5: Executing Verification Simulation ---');
-  const wave = await app.runSimulation('tb_counter');
-  console.log(`  Simulation Test: tb_counter`);
-  console.log(`  Captured Signals: ${wave.signals.map((s) => s.name).join(', ')}`);
+  console.log('\n--- Step 5: Executing Real Icarus Verification Simulation ---');
+  const wave = await app.runSimulation({
+    topModule: 'counter_tb',
+    files: ['examples/counter/rtl/counter.sv', 'examples/counter/tb/counter_tb.sv'],
+    output: '.nayvid/sim/counter_tb.out',
+    waveformPath: 'sim.vcd',
+  });
+  console.log('  Simulation Test: counter_tb');
+  console.log(`  Captured Signals: ${wave.signals.map((s) => s.fullName || s.name).join(', ')}`);
 
   console.log('\n--- Step 6: Signal Intelligence & Root-Cause Inspection ---');
   const sigContext = await app.inspectSignal('count', 10);
@@ -52,22 +57,23 @@ export async function main() {
   console.log(`  Suspected Cause: ${sigContext.suspectedCause ?? 'Normal Operation'}`);
 
   console.log('\n--- Step 7: NAVI AI Agent Query ---');
-  console.log(`  Asking NAVI (Skill: waveform-debugger): "Why is count incrementing as expected?"`);
-  const naviResponse = await app.askNavi('Why is count incrementing as expected?', 'waveform-debugger');
-  console.log(`  NAVI Response:\n  ${naviResponse.answer.replace(/\n/g, '\n  ')}`);
+  console.log('  NAVI is provider-configurable. The CLI demo skips a live model call unless NAYVID_CLI_AI=1.');
+  if (process.env.NAYVID_CLI_AI === '1') {
+    const naviResponse = await app.askNavi('Explain the counter rollover behavior using the Design Graph.', 'waveform-debugger');
+    console.log(`  NAVI Provider: ${naviResponse.providerId}`);
+    console.log(`  NAVI Response:\n  ${naviResponse.answer.replace(/\n/g, '\n  ')}`);
+  }
 
   console.log('\n--- Step 8: Agent Execution Timeline ---');
-  const timeline = app.getTimeline();
-  timeline.forEach((item, idx) => {
+  app.getTimeline().forEach((item, idx) => {
     console.log(`  [${idx + 1}] [${item.status.toUpperCase()}] Skill: ${item.skill} | Tool: ${item.toolName}`);
   });
 
   console.log('\n' + '='.repeat(70));
-  console.log('  Nayvid Silicon Studio Engine executed successfully!');
+  console.log('  Nayvid Silicon Studio deterministic flow executed successfully!');
   console.log('='.repeat(70) + '\n');
 }
 
-// Auto-run when executed directly
 const isDirectRun = process.argv[1] && (process.argv[1].endsWith('index.ts') || process.argv[1].endsWith('index.js'));
 if (isDirectRun) {
   main().catch((err) => {

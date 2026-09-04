@@ -9,41 +9,36 @@ export class NayvidDoctorService {
   ) {}
 
   async checkTool(tool: ToolDefinition, preferredRuntime: RuntimeType = 'auto'): Promise<ToolCheckResult> {
-    const backend = await this.runtimeManager.resolveBestBackend(preferredRuntime);
-    const flag = tool.versionFlag ?? '--version';
-
     try {
+      const backend = await this.runtimeManager.resolveBestBackendFor(tool.supportedRuntimes, preferredRuntime);
+      const flag = tool.versionFlag ?? '--version';
       const res = await backend.execute(tool.binaryName, [flag], { timeoutMs: 5000 });
-      const installed = res.code === 0 || res.stdout.length > 0 || res.stderr.length > 0;
       const rawOutput = (res.stdout + '\n' + res.stderr).trim();
-      const firstLine = rawOutput.split('\n')[0] || '';
+      const installed = res.code === 0;
+      const firstLine = rawOutput.split('\n').find(Boolean) || '';
 
       return {
         tool,
         installed,
-        version: installed ? (firstLine.slice(0, 100) || 'Installed') : undefined,
+        version: installed ? (firstLine.slice(0, 140) || 'Installed') : undefined,
         runtimeUsed: backend.type,
-        message: installed ? `Detected on ${backend.type}` : `Command ${tool.binaryName} not found on ${backend.type}`,
+        message: installed
+          ? `Detected on ${backend.type}`
+          : `${tool.binaryName} exited with code ${res.code} on ${backend.type}${firstLine ? `: ${firstLine}` : ''}`,
       };
     } catch (err: any) {
       return {
         tool,
         installed: false,
-        runtimeUsed: backend.type,
-        message: err.message || 'Execution failed',
+        runtimeUsed: preferredRuntime,
+        message: err?.message || 'No compatible execution backend available',
       };
     }
   }
 
   async runDiagnostics(preferredRuntime: RuntimeType = 'auto'): Promise<DoctorReport> {
     const tools = this.registry.getAllTools();
-    const checks: ToolCheckResult[] = [];
-
-    for (const tool of tools) {
-      const result = await this.checkTool(tool, preferredRuntime);
-      checks.push(result);
-    }
-
+    const checks = await Promise.all(tools.map((tool) => this.checkTool(tool, preferredRuntime)));
     const passed = checks.filter((c) => c.installed).length;
     const failed = checks.length - passed;
 
@@ -51,11 +46,7 @@ export class NayvidDoctorService {
       timestamp: new Date().toISOString(),
       platform: process.platform,
       checks,
-      summary: {
-        total: checks.length,
-        passed,
-        failed,
-      },
+      summary: { total: checks.length, passed, failed },
     };
   }
 }
