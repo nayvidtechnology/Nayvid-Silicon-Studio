@@ -4,6 +4,10 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./slang-cli": "./dist/slang-cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
