@@ -4,14 +4,19 @@ import * as os from 'os';
 import * as path from 'path';
 import { AgentToolGateway } from '../src/index.js';
 import { ExecutionRuntimeManager, type ExecutionBackend, type ExecOptions } from '@nayvid/execution-runtime';
+import { createProjectToolRegistry } from '@nayvid/tool-registry';
 
 class FakeBackend implements ExecutionBackend {
   readonly type = 'linux' as const;
   lastOptions?: ExecOptions;
+  lastCommand?: string;
+  lastArgs?: string[];
   async isAvailable() { return true; }
   toHostPath(value: string) { return value; }
   toGuestPath(value: string) { return value; }
-  async execute(_command: string, _args: string[], options?: ExecOptions) {
+  async execute(command: string, args: string[], options?: ExecOptions) {
+    this.lastCommand = command;
+    this.lastArgs = args;
     this.lastOptions = options;
     return { code: 0, stdout: 'ok', stderr: '', durationMs: 1 };
   }
@@ -43,5 +48,27 @@ describe('AgentToolGateway production execution policy', () => {
     const gateway = new AgentToolGateway(new ExecutionRuntimeManager([backend]), { workspaceRoot: workspace(), allowedRuntimes: ['linux'], externalCommandAllowlist: ['git'], maxTimeoutMs: 5000 });
     await gateway.executeTool('run_external_command', { command: 'git', args: ['status'] }, true);
     expect(backend.lastOptions?.timeoutMs).toBe(5000);
+  });
+
+  it('runs only project-declared registered EDA binaries and still requires approval', async () => {
+    const backend = new FakeBackend();
+    const registry = createProjectToolRegistry(['synopsys-vcs']);
+    const gateway = new AgentToolGateway(new ExecutionRuntimeManager([backend]), {
+      workspaceRoot: workspace(),
+      allowedRuntimes: ['linux'],
+      registry,
+    });
+
+    const needsApproval = await gateway.executeTool('run_eda_tool', { toolId: 'synopsys-vcs', args: ['-full64'] });
+    expect(needsApproval.requiresApproval).toBe(true);
+
+    const allowed = await gateway.executeTool('run_eda_tool', { toolId: 'synopsys-vcs', args: ['-full64'] }, true);
+    expect(allowed.success).toBe(true);
+    expect(backend.lastCommand).toBe('vcs');
+    expect(backend.lastArgs).toEqual(['-full64']);
+
+    const undeclared = await gateway.executeTool('run_eda_tool', { toolId: 'cadence-xcelium', args: [] }, true);
+    expect(undeclared.success).toBe(false);
+    expect(undeclared.error).toContain('not enabled');
   });
 });
