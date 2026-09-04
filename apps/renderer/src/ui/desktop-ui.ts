@@ -147,8 +147,9 @@ async function runSimulationFromUi() {
   try {
     setActiveTab('waveform');
     await studioApp.runSimulation({
-      topModule: 'counter',
-      files: ['examples/counter/rtl/counter.sv'],
+      topModule: 'counter_tb',
+      files: ['examples/counter/rtl/counter.sv', 'examples/counter/tb/counter_tb.sv'],
+      output: '.nayvid/sim/counter_tb.out',
       waveformPath: 'sim.vcd',
     });
   } catch (err: any) {
