@@ -9,278 +9,258 @@ import type {
   FSMState,
   FSMTransition,
   PortDirection,
+  SourceLocation,
 } from '@nayvid/design-ir';
 import type { LanguageAdapter, LintResult, Diagnostic } from './types.js';
 
+const IDENTIFIER = /\b[a-zA-Z_][a-zA-Z0-9_]*\b/g;
+const KEYWORDS = new Set([
+  'if', 'else', 'begin', 'end', 'case', 'endcase', 'always', 'always_ff', 'always_comb',
+  'assign', 'logic', 'reg', 'wire', 'input', 'output', 'inout', 'module', 'endmodule',
+  'typedef', 'enum', 'localparam', 'parameter', 'posedge', 'negedge', 'or', 'and', 'not',
+]);
+
 export function parseWidth(rangeStr?: string): number {
   if (!rangeStr) return 1;
-  const match = rangeStr.match(/\[?\s*([\d\w_]+)\s*:\s*([\d\w_]+)\s*\]?/);
+  const match = rangeStr.match(/\[?\s*(\d+)\s*:\s*(\d+)\s*\]?/);
   if (!match) return 1;
-  const msb = parseInt(match[1], 10);
-  const lsb = parseInt(match[2], 10);
-  if (!isNaN(msb) && !isNaN(lsb)) {
-    return Math.abs(msb - lsb) + 1;
+  return Math.abs(parseInt(match[1], 10) - parseInt(match[2], 10)) + 1;
+}
+
+function identifiers(expression: string, knownSignals: Set<string>): string[] {
+  const result = new Set<string>();
+  for (const match of expression.matchAll(IDENTIFIER)) {
+    const id = match[0];
+    if (!KEYWORDS.has(id) && knownSignals.has(id)) result.add(id);
   }
-  return 8;
+  return [...result];
+}
+
+function pushLocation(list: SourceLocation[], location: SourceLocation): void {
+  if (!list.some((item) => item.file === location.file && item.line === location.line && item.column === location.column)) {
+    list.push(location);
+  }
+}
+
+function parseEnumStates(moduleText: string): FSMState[] {
+  const enumMatch = moduleText.match(/typedef\s+enum\s+(?:logic|reg)?\s*(?:\[[^\]]+\])?\s*\{([\s\S]*?)\}\s*([a-zA-Z_][a-zA-Z0-9_]*_t)\s*;/);
+  if (!enumMatch) return [];
+  return enumMatch[1].split(',').map((raw, index) => {
+    const [nameRaw, valueRaw] = raw.trim().split('=').map((x) => x?.trim());
+    return { name: nameRaw, value: valueRaw || index };
+  }).filter((state) => Boolean(state.name));
+}
+
+function parseFsmTransitions(
+  moduleLines: string[],
+  startIdx: number,
+  filePath: string,
+  stateRegister: string,
+  states: FSMState[]
+): FSMTransition[] {
+  const stateNames = new Set(states.map((state) => state.name));
+  const transitions: FSMTransition[] = [];
+  let activeCaseState: string | undefined;
+  let pendingCondition: string | undefined;
+
+  for (let lineOffset = 0; lineOffset < moduleLines.length; lineOffset++) {
+    const line = moduleLines[lineOffset];
+    const location = { file: filePath, line: startIdx + lineOffset + 1 };
+    const label = line.match(/^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/);
+    let body = line;
+    if (label && stateNames.has(label[1])) {
+      activeCaseState = label[1];
+      pendingCondition = undefined;
+      body = label[2];
+    }
+    if (!activeCaseState) continue;
+
+    const ifMatch = body.match(/\bif\s*\(([^)]+)\)/);
+    if (ifMatch) pendingCondition = ifMatch[1].trim();
+
+    const assignment = body.match(new RegExp(`\\b(?:${stateRegister}|next_${stateRegister}|next_state)\\s*(?:<=|=)\\s*([a-zA-Z_][a-zA-Z0-9_]*)`));
+    if (assignment && stateNames.has(assignment[1])) {
+      transitions.push({
+        from: activeCaseState,
+        to: assignment[1],
+        condition: ifMatch?.[1]?.trim() || pendingCondition,
+        location,
+      });
+      if (body.includes(';')) pendingCondition = undefined;
+    }
+
+    if (/\bendcase\b/.test(line)) {
+      activeCaseState = undefined;
+      pendingCondition = undefined;
+    }
+  }
+
+  return transitions;
 }
 
 export function parseSystemVerilogContent(content: string, filePath: string): DesignModule[] {
   const modules: DesignModule[] = [];
-  const lines = content.split('\n');
-
-  const foundNames: { name: string; startLine: number }[] = [];
+  const lines = content.split(/\r?\n/);
+  const foundNames: Array<{ name: string; startLine: number }> = [];
 
   lines.forEach((line, idx) => {
-    const headerMatch = /module\s+([a-zA-Z0-9_]+)/.exec(line);
-    if (headerMatch && !line.trim().startsWith('//')) {
-      foundNames.push({ name: headerMatch[1], startLine: idx + 1 });
-    }
+    const header = line.match(/^\s*module\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
+    if (header) foundNames.push({ name: header[1], startLine: idx + 1 });
   });
-
-  if (foundNames.length === 0) {
-    const defaultName = filePath.split('/').pop()?.replace(/\.(v|sv)$/, '') || 'top';
-    foundNames.push({ name: defaultName, startLine: 1 });
-  }
+  if (!foundNames.length) return modules;
 
   for (let i = 0; i < foundNames.length; i++) {
-    const modInfo = foundNames[i];
-    const modName = modInfo.name;
-    const startIdx = modInfo.startLine - 1;
+    const info = foundNames[i];
+    const startIdx = info.startLine - 1;
     const endIdx = i + 1 < foundNames.length ? foundNames[i + 1].startLine - 1 : lines.length;
     const moduleLines = lines.slice(startIdx, endIdx);
     const moduleText = moduleLines.join('\n');
-
     const ports: DesignPort[] = [];
     const instances: DesignInstance[] = [];
-    const fsms: DesignFSM[] = [];
-    const clockDomains: Set<string> = new Set();
-    const resetDomains: Set<string> = new Set();
-
+    const clockDomains = new Set<string>();
+    const resetDomains = new Set<string>();
     const signalMap = new Map<string, DesignSignal>();
 
-    // 1. Parse Clock & Reset Domains
     moduleLines.forEach((line) => {
-      const posedgeMatch = line.match(/posedge\s+([a-zA-Z0-9_]+)/g);
-      if (posedgeMatch) {
-        posedgeMatch.forEach((m) => {
-          const clkName = m.replace(/posedge\s+/, '').trim();
-          clockDomains.add(clkName);
-        });
-      }
-
-      const negedgeMatch = line.match(/negedge\s+([a-zA-Z0-9_]+)/g);
-      if (negedgeMatch) {
-        negedgeMatch.forEach((m) => {
-          const rstName = m.replace(/negedge\s+/, '').trim();
-          resetDomains.add(rstName);
-        });
-      }
+      for (const match of line.matchAll(/\bposedge\s+([a-zA-Z_][a-zA-Z0-9_]*)/g)) clockDomains.add(match[1]);
+      for (const match of line.matchAll(/\bnegedge\s+([a-zA-Z_][a-zA-Z0-9_]*)/g)) resetDomains.add(match[1]);
     });
 
-    const primaryClock = Array.from(clockDomains)[0] || 'clk';
-    const primaryReset = Array.from(resetDomains)[0] || 'rst_n';
-
-    // 2. Parse Ports
-    const portRegex = /(input|output|inout)\s+(?:logic|reg|wire|signed|unsigned|[a-zA-Z0-9_]+_t)?\s*(\[\s*[\d\w_:-]+\s*\])?\s*([a-zA-Z0-9_]+)/g;
-    moduleLines.forEach((line, lineOffset) => {
-      const lineNum = startIdx + lineOffset + 1;
-      const pRegex = new RegExp(portRegex.source, 'g');
-      let pMatch: RegExpExecArray | null;
-
-      while ((pMatch = pRegex.exec(line)) !== null) {
-        const dir = pMatch[1] as PortDirection;
-        const widthStr = pMatch[2];
-        const portName = pMatch[3];
-
-        if (!ports.some((p) => p.name === portName)) {
+    const portRegex = /\b(input|output|inout)\s+(?:(logic|reg|wire|signed|unsigned|[a-zA-Z_][a-zA-Z0-9_]*_t)\s+)?(\[[^\]]+\])?\s*([a-zA-Z_][a-zA-Z0-9_]*)/g;
+    moduleLines.forEach((line, offset) => {
+      for (const match of line.matchAll(portRegex)) {
+        const name = match[4];
+        if (!ports.some((port) => port.name === name)) {
           ports.push({
-            name: portName,
-            direction: dir,
-            width: parseWidth(widthStr),
-            location: { file: filePath, line: lineNum },
+            name,
+            direction: match[1] as PortDirection,
+            width: parseWidth(match[3]),
+            type: match[2],
+            location: { file: filePath, line: startIdx + offset + 1 },
           });
         }
       }
     });
 
-    // 3. Parse Signals & Declarations
-    const sigDeclRegex = /(logic|reg|wire|[a-zA-Z0-9_]+_t)\s*(\[\s*[\d\w_:-]+\s*\])?\s*([a-zA-Z0-9_]+)/g;
-    moduleLines.forEach((line, lineOffset) => {
-      const lineNum = startIdx + lineOffset + 1;
-      const sRegex = new RegExp(sigDeclRegex.source, 'g');
-      let sMatch: RegExpExecArray | null;
-
-      while ((sMatch = sRegex.exec(line)) !== null) {
-        const typeStr = sMatch[1];
-        const widthStr = sMatch[2];
-        const sigName = sMatch[3];
-
-        if (
-          !ports.some((p) => p.name === sigName) &&
-          !signalMap.has(sigName) &&
-          !['if', 'else', 'begin', 'end', 'case', 'default', 'typedef', 'enum', 'logic', 'reg'].includes(sigName)
-        ) {
-          const isReg = typeStr === 'reg' || typeStr.endsWith('_t') || line.includes('always_ff') || line.includes('<=');
-          signalMap.set(sigName, {
-            name: sigName,
-            width: parseWidth(widthStr),
-            isRegister: isReg,
-            clockDomain: primaryClock,
-            resetDomain: primaryReset,
-            drivers: [],
-            loads: [],
-            location: { file: filePath, line: lineNum },
-          });
-        }
-      }
-    });
-
-    ports.forEach((p) => {
-      if (!signalMap.has(p.name)) {
-        signalMap.set(p.name, {
-          name: p.name,
-          width: p.width,
-          isRegister: false,
-          clockDomain: primaryClock,
-          resetDomain: primaryReset,
+    const signalRegex = /\b(logic|reg|wire|[a-zA-Z_][a-zA-Z0-9_]*_t)\s*(\[[^\]]+\])?\s*([a-zA-Z_][a-zA-Z0-9_]*)/g;
+    moduleLines.forEach((line, offset) => {
+      for (const match of line.matchAll(signalRegex)) {
+        const name = match[3];
+        if (['logic', 'reg', 'wire'].includes(name) || signalMap.has(name)) continue;
+        const port = ports.find((p) => p.name === name);
+        signalMap.set(name, {
+          name,
+          width: port?.width ?? parseWidth(match[2]),
+          isRegister: match[1] === 'reg' || match[1].endsWith('_t'),
           drivers: [],
           loads: [],
-          location: p.location,
+          driverExpressions: [],
+          dependsOn: [],
+          location: port?.location ?? { file: filePath, line: startIdx + offset + 1 },
         });
       }
     });
-
-    // 4. Parse Drivers & Loads
-    moduleLines.forEach((line, lineOffset) => {
-      const lineNum = startIdx + lineOffset + 1;
-
-      const assignMatch = line.match(/(?:assign\s+)?([a-zA-Z0-9_]+)\s*(?:<=|=)\s*(.+)/);
-      if (assignMatch) {
-        const target = assignMatch[1];
-        const rhs = assignMatch[2];
-
-        const sig = signalMap.get(target);
-        if (sig) {
-          sig.drivers.push({ file: filePath, line: lineNum });
-        }
-
-        signalMap.forEach((s, name) => {
-          if (name !== target && rhs.includes(name)) {
-            s.loads.push({ file: filePath, line: lineNum });
-          }
+    for (const port of ports) {
+      if (!signalMap.has(port.name)) {
+        signalMap.set(port.name, {
+          name: port.name,
+          width: port.width,
+          isRegister: false,
+          drivers: [],
+          loads: [],
+          driverExpressions: [],
+          dependsOn: [],
+          location: port.location,
         });
       }
+    }
 
-      const condMatch = line.match(/(?:if|case|while)\s*\((.+)\)/);
-      if (condMatch) {
-        const expr = condMatch[1];
-        signalMap.forEach((s, name) => {
-          if (expr.includes(name)) {
-            s.loads.push({ file: filePath, line: lineNum });
-          }
-        });
+    const knownSignals = new Set(signalMap.keys());
+    let currentClock: string | undefined;
+    let currentReset: string | undefined;
+    let sequentialDepth = 0;
+
+    moduleLines.forEach((line, offset) => {
+      const location = { file: filePath, line: startIdx + offset + 1 };
+      const always = line.match(/always_ff\s*@\s*\(([^)]+)\)/);
+      if (always) {
+        const clk = always[1].match(/posedge\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
+        const rst = always[1].match(/negedge\s+([a-zA-Z_][a-zA-Z0-9_]*)/);
+        currentClock = clk?.[1];
+        currentReset = rst?.[1];
+        sequentialDepth = 1;
+      }
+
+      const assignmentRegex = /(?:\bassign\s+)?\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(<=|=)\s*([^;]+);/g;
+      for (const assignment of line.matchAll(assignmentRegex)) {
+        const target = assignment[1];
+        const signal = signalMap.get(target);
+        if (!signal) continue;
+        const dependencies = identifiers(assignment[3], knownSignals).filter((dep) => dep !== target);
+        pushLocation(signal.drivers, location);
+        signal.driverExpressions?.push({ expression: assignment[3].trim(), dependencies, sequential: assignment[2] === '<=' || sequentialDepth > 0, location });
+        signal.dependsOn = [...new Set([...(signal.dependsOn ?? []), ...dependencies])];
+        if (assignment[2] === '<=' || sequentialDepth > 0) signal.isRegister = true;
+        if (currentClock) signal.clockDomain = currentClock;
+        if (currentReset) signal.resetDomain = currentReset;
+        for (const dependency of dependencies) {
+          const depSignal = signalMap.get(dependency);
+          if (depSignal) pushLocation(depSignal.loads, location);
+        }
+      }
+
+      for (const condition of line.matchAll(/\b(?:if|while)\s*\(([^)]+)\)/g)) {
+        for (const dependency of identifiers(condition[1], knownSignals)) {
+          const depSignal = signalMap.get(dependency);
+          if (depSignal) pushLocation(depSignal.loads, location);
+        }
+      }
+
+      if (sequentialDepth > 0) {
+        sequentialDepth += (line.match(/\bbegin\b/g) || []).length;
+        sequentialDepth -= (line.match(/\bend\b/g) || []).length;
+        if (sequentialDepth <= 0) {
+          sequentialDepth = 0;
+          currentClock = undefined;
+          currentReset = undefined;
+        }
       }
     });
 
-    // 5. Parse FSM Enums & Transitions
-    const enumMatch = moduleText.match(/typedef\s+enum\s+(?:logic|reg)?\s*(?:\[[\d\w_:-]+\])?\s*\{([\s\S]*?)\}\s*([a-zA-Z0-9_]+_t);/);
-    const fsmStates: FSMState[] = [];
-    if (enumMatch) {
-      const rawStates = enumMatch[1].split(',');
-      rawStates.forEach((st, idx) => {
-        const cleanName = st.trim().split('=')[0].trim();
-        if (cleanName) {
-          fsmStates.push({ name: cleanName, value: idx });
-        }
-      });
-    }
-
-    const stateRegCandidates = ['state', 'current_state', 'tx_state', 'fsm_state', 'st'];
-    const detectedStateReg = Array.from(signalMap.keys()).find((k) =>
-      stateRegCandidates.includes(k.toLowerCase()) || k.toLowerCase().endsWith('_state')
-    );
-
-    if (fsmStates.length === 0) {
-      const stateNames = ['IDLE', 'START', 'TX', 'RX', 'WAIT', 'RUN', 'ERROR', 'DONE'];
-      stateNames.forEach((stName, idx) => {
-        if (moduleText.includes(stName)) {
-          fsmStates.push({ name: stName, value: idx });
-        }
-      });
-    }
-
-    if (fsmStates.length === 0 && detectedStateReg) {
-      fsmStates.push({ name: 'IDLE', value: 0 }, { name: 'RUN', value: 1 });
-    }
-
-    if (fsmStates.length > 0 || detectedStateReg) {
-      const finalStates = fsmStates.length > 0 ? fsmStates : [{ name: 'IDLE', value: 0 }, { name: 'RUN', value: 1 }];
-      const transitions: FSMTransition[] = [];
-
-      for (let sIdx = 0; sIdx < finalStates.length; sIdx++) {
-        const fromState = finalStates[sIdx].name;
-        const nextState = finalStates[(sIdx + 1) % finalStates.length].name;
-        transitions.push({
-          from: fromState,
-          to: nextState,
-          condition: `req == 1`,
-        });
-      }
-
+    const states = parseEnumStates(moduleText);
+    const stateRegister = [...signalMap.keys()].find((name) => /(^state$|_state$|^current_state$)/i.test(name));
+    const fsms: DesignFSM[] = [];
+    if (states.length && stateRegister) {
       fsms.push({
-        name: `${modName}_fsm`,
-        stateRegister: detectedStateReg || 'state',
-        states: finalStates,
-        transitions,
-        location: { file: filePath, line: startIdx + 1 },
+        name: `${info.name}_fsm`,
+        stateRegister,
+        states,
+        transitions: parseFsmTransitions(moduleLines, startIdx, filePath, stateRegister, states),
+        location: signalMap.get(stateRegister)?.location,
       });
     }
 
-    // 6. Parse Instances
-    const instRegex = /([a-zA-Z0-9_]+)\s+(?:#\([\s\S]*?\)\s+)?([a-zA-Z0-9_]+)\s*\(([\s\S]*?)\);/g;
-    let iMatch: RegExpExecArray | null;
-    while ((iMatch = instRegex.exec(moduleText)) !== null) {
-      const instModule = iMatch[1];
-      const instName = iMatch[2];
-      const portConnStr = iMatch[3];
-
-      if (
-        instModule !== 'module' &&
-        instModule !== 'typedef' &&
-        instModule !== 'always' &&
-        instModule !== 'always_ff' &&
-        instModule !== 'always_comb' &&
-        instModule !== 'initial' &&
-        instModule !== 'if' &&
-        instModule !== 'case'
-      ) {
-        const portConnections: Record<string, string> = {};
-        const connPairs = portConnStr.split(',');
-        connPairs.forEach((pair) => {
-          const cMatch = pair.match(/\.([a-zA-Z0-9_]+)\s*\(\s*([a-zA-Z0-9_]+)\s*\)/);
-          if (cMatch) {
-            portConnections[cMatch[1]] = cMatch[2];
-          }
-        });
-
-        instances.push({
-          name: instName,
-          moduleName: instModule,
-          portConnections,
-          location: { file: filePath, line: startIdx + 1 },
-        });
+    const instanceRegex = /^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+(?:#\([\s\S]*?\)\s*)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^;]*)\)\s*;/gm;
+    for (const match of moduleText.matchAll(instanceRegex)) {
+      const moduleName = match[1];
+      if (KEYWORDS.has(moduleName) || moduleName === info.name) continue;
+      const portConnections: Record<string, string> = {};
+      for (const connection of match[3].matchAll(/\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*([^\)]+)\s*\)/g)) {
+        portConnections[connection[1]] = connection[2].trim();
       }
+      const line = startIdx + moduleText.slice(0, match.index ?? 0).split('\n').length;
+      instances.push({ name: match[2], moduleName, portConnections, location: { file: filePath, line } });
     }
 
     modules.push({
-      name: modName,
+      name: info.name,
       file: filePath,
       ports,
-      signals: Array.from(signalMap.values()),
+      signals: [...signalMap.values()],
       instances,
       fsms,
-      clockDomains: Array.from(clockDomains).length > 0 ? Array.from(clockDomains) : ['clk'],
-      resetDomains: Array.from(resetDomains).length > 0 ? Array.from(resetDomains) : ['rst_n'],
+      clockDomains: [...clockDomains],
+      resetDomains: [...resetDomains],
     });
   }
 
@@ -290,93 +270,61 @@ export function parseSystemVerilogContent(content: string, filePath: string): De
 export class SlangAdapter implements LanguageAdapter {
   readonly name = 'slang';
 
-  async parseToIR(files: string[], topModule: string = 'top'): Promise<DesignGraph> {
-    const modulesMap: Record<string, DesignModule> = {};
+  async parseContentToIR(content: string, filePath = '<memory>.sv', topModule = 'top'): Promise<DesignGraph> {
+    const modules = parseSystemVerilogContent(content, filePath);
+    const moduleMap = Object.fromEntries(modules.map((module) => [module.name, module]));
+    const available = Object.keys(moduleMap);
+    if (!available.length) throw new Error(`No SystemVerilog module declaration found in ${filePath}`);
+    return { topModule: moduleMap[topModule] ? topModule : available[0], modules: moduleMap };
+  }
 
-    for (const file of files) {
-      let content = '';
-      if (fs.existsSync(file)) {
-        content = fs.readFileSync(file, 'utf-8');
-      } else if (file.includes('module ')) {
-        content = file;
+  async parseToIR(files: string[], topModule = 'top'): Promise<DesignGraph> {
+    const modules: Record<string, DesignModule> = {};
+    for (let index = 0; index < files.length; index++) {
+      const source = files[index];
+      let content: string;
+      let sourceName: string;
+      if (fs.existsSync(source)) {
+        content = fs.readFileSync(source, 'utf-8');
+        sourceName = source;
+      } else if (/\bmodule\s+[a-zA-Z_]/.test(source)) {
+        content = source;
+        sourceName = `<memory-${index}>.sv`;
       } else {
-        content = `module ${topModule};\n  input logic clk;\n  input logic rst_n;\n  output logic [7:0] data_out;\n  logic [1:0] state;\nendmodule`;
+        throw new Error(`SystemVerilog source not found: ${source}`);
       }
-
-      const parsedModules = parseSystemVerilogContent(content, file);
-      parsedModules.forEach((mod) => {
-        modulesMap[mod.name] = mod;
-      });
+      for (const module of parseSystemVerilogContent(content, sourceName)) modules[module.name] = module;
     }
-
-    const availableModules = Object.keys(modulesMap);
-    const resolvedTop = modulesMap[topModule]
-      ? topModule
-      : availableModules[0] || topModule;
-
-    return {
-      topModule: resolvedTop,
-      modules: modulesMap,
-    };
+    const available = Object.keys(modules);
+    if (!available.length) throw new Error('No SystemVerilog modules were parsed.');
+    return { topModule: modules[topModule] ? topModule : available[0], modules };
   }
 
   async runLint(files: string[]): Promise<LintResult[]> {
     return files.map((file) => {
+      if (!fs.existsSync(file)) {
+        return {
+          file,
+          diagnostics: [{ severity: 'error', code: 'file-not-found', message: `HDL file not found: ${file}`, location: { file, line: 1, column: 1 } }],
+        };
+      }
+      const content = fs.readFileSync(file, 'utf-8');
       const diagnostics: Diagnostic[] = [];
-
-      let content = '';
-      if (fs.existsSync(file)) {
-        content = fs.readFileSync(file, 'utf-8');
-      }
-
-      if (content) {
-        if (!content.includes('rst_n') && !content.includes('reset')) {
-          diagnostics.push({
-            severity: 'warning',
-            code: 'no-reset-domain',
-            message: 'Module does not declare an explicit reset domain signal (rst_n / reset).',
-            location: { file, line: 1, column: 1 },
-          });
-        }
-
-        if (content.includes('always @(*)') || content.includes('always @(')) {
-          diagnostics.push({
-            severity: 'info',
-            code: 'systemverilog-style',
-            message: 'Consider replacing legacy Verilog always block with always_comb or always_ff.',
-            location: { file, line: 1, column: 1 },
-          });
-        }
-      }
-
-      return {
-        file,
-        diagnostics,
-      };
+      if (!/\bmodule\s+[a-zA-Z_]/.test(content)) diagnostics.push({ severity: 'error', code: 'no-module', message: 'No module declaration found.', location: { file, line: 1, column: 1 } });
+      if (!content.includes('rst_n') && !/\breset\b/.test(content)) diagnostics.push({ severity: 'warning', code: 'no-reset-domain', message: 'Module does not declare an explicit reset signal.', location: { file, line: 1, column: 1 } });
+      if (/always\s*@/.test(content)) diagnostics.push({ severity: 'info', code: 'systemverilog-style', message: 'Consider always_comb/always_ff for explicit intent.', location: { file, line: 1, column: 1 } });
+      return { file, diagnostics };
     });
   }
 }
 
 export class VeribleAdapter implements LanguageAdapter {
   readonly name = 'verible';
-
-  async parseToIR(files: string[], topModule: string = 'top'): Promise<DesignGraph> {
-    const slang = new SlangAdapter();
-    return slang.parseToIR(files, topModule);
+  async parseToIR(files: string[], topModule = 'top'): Promise<DesignGraph> {
+    return new SlangAdapter().parseToIR(files, topModule);
   }
-
   async runLint(files: string[]): Promise<LintResult[]> {
-    return files.map((file) => ({
-      file,
-      diagnostics: [
-        {
-          severity: 'info',
-          code: 'style-autofix',
-          message: 'SystemVerilog formatting check',
-          location: { file, line: 1, column: 1 },
-        },
-      ],
-    }));
+    return new SlangAdapter().runLint(files);
   }
 }
 
