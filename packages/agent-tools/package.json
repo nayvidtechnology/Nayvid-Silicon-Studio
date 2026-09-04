@@ -11,7 +11,9 @@
   "dependencies": {
     "@nayvid/execution-runtime": "workspace:*",
     "@nayvid/tool-registry": "workspace:*",
-    "@nayvid/design-ir": "workspace:*"
+    "@nayvid/design-ir": "workspace:*",
+    "@nayvid/hdl-language": "workspace:*",
+    "@nayvid/verivisual": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

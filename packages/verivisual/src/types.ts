@@ -1,4 +1,6 @@
 import type { DesignGraph } from '@nayvid/design-ir';
+import { parseVcd } from './vcd-parser.js';
+import { extractSignalIntelligence, type SignalIntelligenceContext } from './signal-intelligence.js';
 
 export interface VisualNode {
   id: string;
@@ -64,29 +66,24 @@ export class VeriVisualEngine {
     return { nodes, edges };
   }
 
-  parseVcdSimple(_vcdContent: string): WaveformModel {
-    const signals: WaveformSignal[] = [
-      {
-        name: 'clk',
-        wave: [
-          { timeNs: 0, value: 0 },
-          { timeNs: 5, value: 1 },
-          { timeNs: 10, value: 0 },
-          { timeNs: 15, value: 1 },
-        ],
-      },
-      {
-        name: 'rst_n',
-        wave: [
-          { timeNs: 0, value: 0 },
-          { timeNs: 10, value: 1 },
-        ],
-      },
-    ];
+  parseVcd(vcdContent: string): WaveformModel {
+    return parseVcd(vcdContent);
+  }
 
-    return {
-      timescale: '1ns',
-      signals,
-    };
+  parseVcdSimple(vcdContent: string): WaveformModel {
+    return parseVcd(vcdContent);
+  }
+
+  getSignalContext(
+    signalName: string,
+    graph: DesignGraph,
+    waveform?: WaveformModel,
+    atTimeNs?: number
+  ): SignalIntelligenceContext {
+    return extractSignalIntelligence(signalName, graph, waveform, atTimeNs);
   }
 }
+
+export * from './vcd-parser.js';
+export * from './signal-intelligence.js';
+export * from './icons.js';

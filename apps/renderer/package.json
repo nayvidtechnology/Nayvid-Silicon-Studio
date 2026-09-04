@@ -13,7 +13,9 @@
     "@nayvid/hdl-language": "workspace:*",
     "@nayvid/verivisual": "workspace:*",
     "@nayvid/ai-core": "workspace:*",
-    "@nayvid/model-providers": "workspace:*"
+    "@nayvid/model-providers": "workspace:*",
+    "@nayvid/agent-tools": "workspace:*",
+    "@nayvid/tool-registry": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

@@ -45,6 +45,9 @@ importers:
 
   apps/renderer:
     dependencies:
+      '@nayvid/agent-tools':
+        specifier: workspace:*
+        version: link:../../packages/agent-tools
       '@nayvid/ai-core':
         specifier: workspace:*
         version: link:../../packages/ai-core
@@ -57,6 +60,9 @@ importers:
       '@nayvid/model-providers':
         specifier: workspace:*
         version: link:../../packages/model-providers
+      '@nayvid/tool-registry':
+        specifier: workspace:*
+        version: link:../../packages/tool-registry
       '@nayvid/verivisual':
         specifier: workspace:*
         version: link:../../packages/verivisual
@@ -76,9 +82,15 @@ importers:
       '@nayvid/execution-runtime':
         specifier: workspace:*
         version: link:../execution-runtime
+      '@nayvid/hdl-language':
+        specifier: workspace:*
+        version: link:../hdl-language
       '@nayvid/tool-registry':
         specifier: workspace:*
         version: link:../tool-registry
+      '@nayvid/verivisual':
+        specifier: workspace:*
+        version: link:../verivisual
     devDependencies:
       typescript:
         specifier: ^5.5.4

@@ -1,5 +1,6 @@
 import type { ModelProvider } from '@nayvid/model-providers';
 import type { DesignGraph } from '@nayvid/design-ir';
+import type { NaviSkill, AgentActivityItem } from './types.js';
 
 export type PrivacyPolicy = 'cloud-allowed' | 'ask-before-cloud' | 'local-only' | 'ai-disabled';
 
@@ -63,6 +64,28 @@ export class ContextEngine {
     }
 
     return parts.join('\n\n');
+  }
+}
+
+export class AgentTimelineTracker {
+  private timeline: AgentActivityItem[] = [];
+
+  addActivity(item: Omit<AgentActivityItem, 'id' | 'timestamp'>): AgentActivityItem {
+    const fullItem: AgentActivityItem = {
+      ...item,
+      id: `act_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      timestamp: new Date().toISOString().split('T')[1].slice(0, 8),
+    };
+    this.timeline.push(fullItem);
+    return fullItem;
+  }
+
+  getTimeline(): AgentActivityItem[] {
+    return [...this.timeline];
+  }
+
+  clear(): void {
+    this.timeline = [];
   }
 }
 
