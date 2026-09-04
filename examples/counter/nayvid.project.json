@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "name": "counter-production-demo",
+  "topModule": "counter",
+  "sources": [
+    "rtl/counter.sv"
+  ],
+  "toolchain": [
+    { "toolId": "slang", "required": true },
+    { "toolId": "verilator", "required": true },
+    { "toolId": "iverilog", "required": true }
+  ],
+  "signoff": {
+    "requireCompile": true,
+    "requireSimulation": true,
+    "minCoveragePercent": 90,
+    "maxCdcIssues": 0,
+    "maxUnconstrainedPaths": 0,
+    "minWnsNs": 0,
+    "requireToolchainLock": true
+  },
+  "security": {
+    "allowedRuntimes": ["linux", "wsl2", "docker", "native-windows"],
+    "cloudAi": "approval-required",
+    "requireLockedToolchain": true
+  }
+}

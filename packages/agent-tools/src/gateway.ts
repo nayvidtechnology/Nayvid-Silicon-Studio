@@ -24,6 +24,10 @@ export interface ToolResult {
 export interface AgentToolGatewayOptions {
   workspaceRoot?: string;
   preferredRuntime?: RuntimeType;
+  allowedRuntimes?: RuntimeType[];
+  externalCommandAllowlist?: string[];
+  maxTimeoutMs?: number;
+  registry?: ToolRegistry;
 }
 
 function walkFiles(root: string, acc: string[] = []): string[] {
@@ -47,9 +51,12 @@ function normalizeWorkspacePath(value: string): string {
 export class AgentToolGateway {
   private slang = new SlangAdapter();
   private verivisual = new VeriVisualEngine();
-  private registry = new ToolRegistry();
+  private registry: ToolRegistry;
   private workspaceRoot: string;
   private preferredRuntime: RuntimeType;
+  private allowedRuntimes?: Set<RuntimeType>;
+  private externalCommandAllowlist?: Set<string>;
+  private maxTimeoutMs: number;
 
   constructor(
     private runtimeManager: ExecutionRuntimeManager = new ExecutionRuntimeManager(),
@@ -57,6 +64,16 @@ export class AgentToolGateway {
   ) {
     this.workspaceRoot = path.resolve(options.workspaceRoot ?? process.cwd());
     this.preferredRuntime = options.preferredRuntime ?? 'auto';
+    this.allowedRuntimes = options.allowedRuntimes ? new Set(options.allowedRuntimes) : undefined;
+    this.externalCommandAllowlist = options.externalCommandAllowlist ? new Set(options.externalCommandAllowlist) : undefined;
+    this.maxTimeoutMs = Math.max(1000, Math.min(options.maxTimeoutMs ?? 120000, 30 * 60 * 1000));
+    this.registry = options.registry ?? new ToolRegistry();
+  }
+
+  private assertRuntimeAllowed(runtime: RuntimeType): void {
+    if (this.allowedRuntimes && !this.allowedRuntimes.has(runtime)) {
+      throw new Error(`Execution runtime '${runtime}' is blocked by project policy.`);
+    }
   }
 
   private resolveWorkspacePath(input: string): string {
@@ -76,7 +93,8 @@ export class AgentToolGateway {
     if (!tool) return { success: false, output: null, error: `Tool '${toolId}' is not registered.` };
     try {
       const backend = await this.runtimeManager.resolveBestBackendFor(tool.supportedRuntimes, this.preferredRuntime);
-      const res = await backend.execute(tool.binaryName, args, { cwd, timeoutMs: 120000 });
+      this.assertRuntimeAllowed(backend.type);
+      const res = await backend.execute(tool.binaryName, args, { cwd, timeoutMs: this.maxTimeoutMs });
       return {
         success: res.code === 0,
         output: (res.stdout || res.stderr).trim(),
@@ -102,6 +120,7 @@ export class AgentToolGateway {
       { name: 'run_synthesis', description: 'Execute Yosys synthesis and return real tool output', parameters: { type: 'object', properties: { topModule: { type: 'string' }, files: { type: 'array', items: { type: 'string' } } }, required: ['topModule', 'files'] } },
       { name: 'run_test', description: 'Execute a named verification command without a shell', parameters: { type: 'object', properties: { command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } }, cwd: { type: 'string' } }, required: ['command'] }, requiresApproval: true },
       { name: 'run_simulation', description: 'Compile SystemVerilog testbench using Icarus and execute with vvp on the same backend', parameters: { type: 'object', properties: { topModule: { type: 'string' }, files: { type: 'array', items: { type: 'string' } }, output: { type: 'string' } }, required: ['topModule', 'files'] } },
+      { name: 'run_eda_tool', description: 'Run a specifically registered EDA executable without shell interpolation', parameters: { type: 'object', properties: { toolId: { type: 'string' }, args: { type: 'array', items: { type: 'string' } }, cwd: { type: 'string' } }, required: ['toolId'] }, requiresApproval: true },
       { name: 'read_waveform', description: 'Read and parse a VCD simulation waveform file', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
       { name: 'apply_patch', description: 'Apply exact search-and-replace modification to a file', parameters: { type: 'object', properties: { path: { type: 'string' }, search: { type: 'string' }, replace: { type: 'string' } }, required: ['path', 'search', 'replace'] }, requiresApproval: true },
       { name: 'git_diff', description: 'Show the actual git diff for workspace/path', parameters: { type: 'object', properties: { path: { type: 'string' } } } },
@@ -131,11 +150,7 @@ export class AgentToolGateway {
             try { text = fs.readFileSync(file, 'utf-8'); } catch { continue; }
             text.split(/\r?\n/).forEach((line, index) => {
               if (line.includes(query) && matches.length < 200) {
-                matches.push({
-                  path: normalizeWorkspacePath(path.relative(this.workspaceRoot, file)),
-                  line: index + 1,
-                  text: line.trim(),
-                });
+                matches.push({ path: normalizeWorkspacePath(path.relative(this.workspaceRoot, file)), line: index + 1, text: line.trim() });
               }
             });
             if (matches.length >= 200) break;
@@ -182,11 +197,24 @@ export class AgentToolGateway {
           const script = `read_verilog -sv ${files.map((file) => `\"${file}\"`).join(' ')}; hierarchy -check -top ${args.topModule}; proc; opt; stat`;
           return this.executeRegisteredTool('yosys', ['-p', script], this.workspaceRoot);
         }
+        case 'run_eda_tool': {
+          const toolId = String(args.toolId || '');
+          const tool = this.registry.getTool(toolId);
+          if (!tool) return { success: false, output: null, error: `EDA tool '${toolId}' is not enabled in this project registry.` };
+          const cwd = args.cwd ? this.resolveWorkspacePath(args.cwd) : this.workspaceRoot;
+          const toolArgs = Array.isArray(args.args) ? args.args.map(String) : [];
+          return this.executeRegisteredTool(toolId, toolArgs, cwd);
+        }
         case 'run_test':
         case 'run_external_command': {
+          const command = String(args.command);
+          if (this.externalCommandAllowlist && !this.externalCommandAllowlist.has(command)) {
+            return { success: false, output: null, error: `External command '${command}' is blocked by project policy.` };
+          }
           const backend = await this.runtimeManager.resolveBestBackend(this.preferredRuntime);
+          this.assertRuntimeAllowed(backend.type);
           const cwd = args.cwd ? this.resolveWorkspacePath(args.cwd) : this.workspaceRoot;
-          const result = await backend.execute(args.command, args.args || [], { cwd, timeoutMs: 120000 });
+          const result = await backend.execute(command, args.args || [], { cwd, timeoutMs: this.maxTimeoutMs });
           return { success: result.code === 0, output: result.stdout, error: result.code === 0 ? undefined : result.stderr, runtimeUsed: backend.type, exitCode: result.code };
         }
         case 'run_simulation': {
@@ -198,7 +226,8 @@ export class AgentToolGateway {
           const compile = await this.executeRegisteredTool('iverilog', ['-g2012', '-s', args.topModule, '-o', outputRelative, ...files], this.workspaceRoot);
           if (!compile.success || !compile.runtimeUsed) return compile;
           const backend = this.runtimeManager.getBackend(compile.runtimeUsed);
-          const run = await backend.execute('vvp', [outputRelative], { cwd: this.workspaceRoot, timeoutMs: 120000 });
+          this.assertRuntimeAllowed(backend.type);
+          const run = await backend.execute('vvp', [outputRelative], { cwd: this.workspaceRoot, timeoutMs: this.maxTimeoutMs });
           return { success: run.code === 0, output: run.stdout, error: run.code === 0 ? undefined : run.stderr, runtimeUsed: backend.type, exitCode: run.code };
         }
         case 'read_waveform': {
@@ -216,8 +245,9 @@ export class AgentToolGateway {
         }
         case 'git_diff': {
           const backend = await this.runtimeManager.resolveBestBackend(this.preferredRuntime);
+          this.assertRuntimeAllowed(backend.type);
           const diffArgs = ['diff', '--', ...(args.path ? [this.relativeToolPath(args.path)] : [])];
-          const result = await backend.execute('git', diffArgs, { cwd: this.workspaceRoot, timeoutMs: 30000 });
+          const result = await backend.execute('git', diffArgs, { cwd: this.workspaceRoot, timeoutMs: Math.min(this.maxTimeoutMs, 30000) });
           return { success: result.code === 0, output: result.stdout, error: result.code === 0 ? undefined : result.stderr, runtimeUsed: backend.type, exitCode: result.code };
         }
         case 'delete_file': {

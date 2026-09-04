@@ -1,4 +1,5 @@
 export * from './app.js';
+export * from './production.js';
 import { SiliconStudioApp } from './app.js';
 
 export async function main() {

@@ -83,3 +83,4 @@ export class ExecutionRuntimeManager {
 
 export * from './types.js';
 export * from './backends.js';
+export * from './compute-farm.js';

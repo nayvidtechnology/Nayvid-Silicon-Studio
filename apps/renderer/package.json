@@ -17,7 +17,8 @@
     "@nayvid/model-providers": "workspace:*",
     "@nayvid/agent-tools": "workspace:*",
     "@nayvid/tool-registry": "workspace:*",
-    "@nayvid/engineering-core": "workspace:*"
+    "@nayvid/engineering-core": "workspace:*",
+    "@nayvid/platform-core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.4",
