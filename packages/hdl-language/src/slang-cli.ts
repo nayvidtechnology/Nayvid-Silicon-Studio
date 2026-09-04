@@ -47,12 +47,14 @@ function widthFromType(value: unknown): number {
 
 function collectInstances(root: JsonNode): JsonNode[] {
   const found: JsonNode[] = [];
+  const visited = new Set<object>();
   const visit = (node: unknown) => {
     if (!node || typeof node !== 'object') return;
+    if (visited.has(node as object)) return;
+    visited.add(node as object);
     const obj = node as JsonNode;
     if (obj.kind === 'Instance' && obj.body?.kind === 'InstanceBody') found.push(obj);
-    for (const [key, value] of Object.entries(obj)) {
-      if (key === 'body' && obj.kind === 'Instance') continue;
+    for (const value of Object.values(obj)) {
       if (Array.isArray(value)) value.forEach(visit);
       else if (value && typeof value === 'object') visit(value);
     }
