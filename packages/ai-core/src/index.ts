@@ -8,6 +8,7 @@ export interface WorkspaceContext {
   activeFile?: { path: string; content: string };
   designGraph?: DesignGraph;
   recentLogs?: string[];
+  selectedSignal?: string;
 }
 
 export class ModelFabricRouter {
@@ -17,28 +18,51 @@ export class ModelFabricRouter {
     this.providers.set(provider.id, provider);
   }
 
+  unregisterProvider(id: string): void {
+    this.providers.delete(id);
+  }
+
   getProvider(id: string): ModelProvider | undefined {
     return this.providers.get(id);
   }
 
-  selectProvider(policy: PrivacyPolicy, _requireVision: boolean = false): ModelProvider {
-    if (policy === 'ai-disabled') {
-      throw new Error('AI features are disabled by workspace privacy policy.');
-    }
+  getProviders(): ModelProvider[] {
+    return Array.from(this.providers.values());
+  }
+
+  selectProvider(
+    policy: PrivacyPolicy,
+    requireVision: boolean = false,
+    cloudApproved: boolean = false,
+    preferredProviderId?: string
+  ): ModelProvider {
+    if (policy === 'ai-disabled') throw new Error('AI features are disabled by workspace privacy policy.');
+
+    const candidates = this.getProviders().filter((p) => !requireVision || p.supportsVision);
+    if (candidates.length === 0) throw new Error(requireVision ? 'No vision-capable AI provider is available.' : 'No AI model provider available.');
+
+    const preferred = preferredProviderId ? candidates.find((p) => p.id === preferredProviderId) : undefined;
 
     if (policy === 'local-only') {
-      const local = Array.from(this.providers.values()).find((p) => p.isLocal);
-      if (!local) {
-        throw new Error('No local model provider registered for local-only policy.');
-      }
+      const local = preferred?.isLocal ? preferred : candidates.find((p) => p.isLocal);
+      if (!local) throw new Error('No local model provider registered for local-only policy.');
       return local;
     }
 
-    const preferred = this.providers.get('openai') || Array.from(this.providers.values())[0];
-    if (!preferred) {
-      throw new Error('No AI model provider available.');
+    if (policy === 'ask-before-cloud' && !cloudApproved) {
+      const local = preferred?.isLocal ? preferred : candidates.find((p) => p.isLocal);
+      if (local) return local;
+      throw new Error('Cloud model use requires explicit approval for this workspace request.');
     }
-    return preferred;
+
+    if (preferred) {
+      if (!preferred.isLocal && policy === 'ask-before-cloud' && !cloudApproved) {
+        throw new Error(`Cloud provider '${preferred.id}' requires explicit approval.`);
+      }
+      return preferred;
+    }
+
+    return candidates.find((p) => p.id === 'openai') || candidates[0];
   }
 }
 
@@ -54,14 +78,17 @@ export class ContextEngine {
       const top = context.designGraph.modules[context.designGraph.topModule];
       if (top) {
         parts.push(`=== Design Graph Top Module: ${top.name} ===`);
-        parts.push(`Ports: ${top.ports.map((p) => `${p.name} (${p.direction})`).join(', ')}`);
-        parts.push(`Signals: ${top.signals.map((s) => s.name).join(', ')}`);
+        parts.push(`Ports: ${top.ports.map((p) => `${p.name} (${p.direction}, ${p.width}b)`).join(', ')}`);
+        parts.push(`Signals: ${top.signals.map((s) => `${s.name}${s.dependsOn?.length ? ` <- ${s.dependsOn.join('|')}` : ''}`).join(', ')}`);
+        if (top.instances.length) parts.push(`Instances: ${top.instances.map((i) => `${i.name}:${i.moduleName}`).join(', ')}`);
+        if (top.fsms.length) parts.push(`FSMs: ${top.fsms.map((f) => `${f.name}[${f.states.map((s) => s.name).join('|')}]`).join(', ')}`);
+        if (top.clockDomains.length) parts.push(`Clock domains: ${top.clockDomains.join(', ')}`);
+        if (top.resetDomains.length) parts.push(`Reset domains: ${top.resetDomains.join(', ')}`);
       }
     }
 
-    if (context.recentLogs && context.recentLogs.length > 0) {
-      parts.push(`=== Recent Logs ===\n${context.recentLogs.join('\n')}`);
-    }
+    if (context.selectedSignal) parts.push(`=== Selected Signal ===\n${context.selectedSignal}`);
+    if (context.recentLogs?.length) parts.push(`=== Recent Logs ===\n${context.recentLogs.join('\n')}`);
 
     return parts.join('\n\n');
   }
@@ -73,15 +100,22 @@ export class AgentTimelineTracker {
   addActivity(item: Omit<AgentActivityItem, 'id' | 'timestamp'>): AgentActivityItem {
     const fullItem: AgentActivityItem = {
       ...item,
-      id: `act_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      timestamp: new Date().toISOString().split('T')[1].slice(0, 8),
+      id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toISOString(),
     };
     this.timeline.push(fullItem);
     return fullItem;
   }
 
+  updateActivity(id: string, patch: Partial<Omit<AgentActivityItem, 'id'>>): AgentActivityItem | undefined {
+    const item = this.timeline.find((entry) => entry.id === id);
+    if (!item) return undefined;
+    Object.assign(item, patch);
+    return item;
+  }
+
   getTimeline(): AgentActivityItem[] {
-    return [...this.timeline];
+    return this.timeline.map((item) => ({ ...item, arguments: { ...item.arguments } }));
   }
 
   clear(): void {
