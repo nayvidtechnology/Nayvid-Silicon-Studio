@@ -79,7 +79,11 @@ export class ToolchainLockService {
   check(manifest: ProjectManifest, probes: ToolchainProbe[]): ToolchainCheck {
     const errors: string[] = [];
     const normalized = [...probes].sort((a, b) => a.toolId.localeCompare(b.toolId));
-    const byId = new Map(normalized.map((probe) => [probe.toolId, probe]));
+    const byId = new Map<string, ToolchainProbe>();
+    for (const probe of normalized) {
+      if (byId.has(probe.toolId)) errors.push(`Duplicate toolchain probe: ${probe.toolId}`);
+      byId.set(probe.toolId, probe);
+    }
     for (const req of manifest.toolchain ?? []) {
       const probe = byId.get(req.toolId);
       if (!probe?.installed) {
@@ -102,8 +106,11 @@ export class ContentAddressedArtifactStore {
     const dir = path.join(this.root, 'sha256', digest.slice(0, 2));
     fs.mkdirSync(dir, { recursive: true });
     const blobPath = path.join(dir, digest);
-    if (!fs.existsSync(blobPath)) {
-      const temp = `${blobPath}.tmp-${process.pid}`;
+    if (fs.existsSync(blobPath)) {
+      const existing = fs.readFileSync(blobPath);
+      if (sha256(existing) !== digest) throw new Error(`Existing artifact blob integrity failure for ${logicalName}`);
+    } else {
+      const temp = `${blobPath}.tmp-${process.pid}-${Date.now()}`;
       fs.writeFileSync(temp, buffer);
       fs.renameSync(temp, blobPath);
     }
@@ -113,6 +120,7 @@ export class ContentAddressedArtifactStore {
   read(ref: ArtifactRef): Buffer {
     const data = fs.readFileSync(ref.path);
     if (sha256(data) !== ref.digest) throw new Error(`Artifact integrity failure for ${ref.logicalName}`);
+    if (data.length !== ref.size) throw new Error(`Artifact size integrity failure for ${ref.logicalName}`);
     return data;
   }
 }
@@ -132,16 +140,29 @@ export class RunLedger {
   }
 
   begin(input: Omit<RunRecord, 'id' | 'status' | 'startedAt' | 'artifacts'> & { kind: RunKind }): RunRecord {
-    const seed = stableJson({ ...input, timestamp: new Date().toISOString(), nonce: this.records.size });
-    const record: RunRecord = { ...input, id: sha256(seed).slice(0, 20), status: 'running', startedAt: new Date().toISOString(), artifacts: [] };
+    const now = new Date().toISOString();
+    const seed = stableJson({ ...input, timestamp: now, nonce: this.records.size });
+    const record: RunRecord = { ...input, id: sha256(seed).slice(0, 20), status: 'running', startedAt: now, artifacts: [] };
     this.records.set(record.id, record);
     this.append(record);
     return record;
   }
 
-  finish(id: string, patch: Partial<Pick<RunRecord, 'status' | 'exitCode' | 'stdoutDigest' | 'stderrDigest' | 'runtime' | 'artifacts' | 'metadata'>>): RunRecord {
+  update(id: string, patch: Partial<Pick<RunRecord, 'stdoutDigest' | 'stderrDigest' | 'runtime' | 'artifacts' | 'metadata'>>): RunRecord {
     const current = this.records.get(id);
     if (!current) throw new Error(`Unknown run: ${id}`);
+    if (['passed', 'failed', 'cancelled'].includes(current.status)) throw new Error(`Run '${id}' is already terminal (${current.status})`);
+    const next: RunRecord = { ...current, ...patch };
+    this.records.set(id, next);
+    this.append(next);
+    return next;
+  }
+
+  finish(id: string, patch: Pick<RunRecord, 'status'> & Partial<Pick<RunRecord, 'exitCode' | 'stdoutDigest' | 'stderrDigest' | 'runtime' | 'artifacts' | 'metadata'>>): RunRecord {
+    const current = this.records.get(id);
+    if (!current) throw new Error(`Unknown run: ${id}`);
+    if (['passed', 'failed', 'cancelled'].includes(current.status)) throw new Error(`Run '${id}' is already terminal (${current.status})`);
+    if (!['passed', 'failed', 'cancelled'].includes(patch.status)) throw new Error(`Run '${id}' can only finish with passed, failed or cancelled status`);
     const next: RunRecord = { ...current, ...patch, completedAt: new Date().toISOString() };
     this.records.set(id, next);
     this.append(next);
@@ -158,6 +179,7 @@ export class HashChainedAuditLog {
   constructor(root: string) { fs.mkdirSync(root, { recursive: true }); this.filePath = path.join(root, 'audit.jsonl'); }
 
   append(input: Omit<AuditEvent, 'timestamp' | 'prevHash' | 'hash'>): AuditEvent {
+    if (fs.existsSync(this.filePath) && !this.verify()) throw new Error('Audit log integrity failure; refusing to append to a corrupted chain');
     const entries = this.read();
     const prevHash = entries.at(-1)?.hash ?? 'GENESIS';
     const body = { ...input, timestamp: new Date().toISOString(), prevHash };
@@ -172,14 +194,18 @@ export class HashChainedAuditLog {
   }
 
   verify(): boolean {
-    let previous = 'GENESIS';
-    for (const event of this.read()) {
-      if (event.prevHash !== previous) return false;
-      const { hash, ...body } = event;
-      if (sha256(stableJson(body)) !== hash) return false;
-      previous = hash;
+    try {
+      let previous = 'GENESIS';
+      for (const event of this.read()) {
+        if (event.prevHash !== previous) return false;
+        const { hash, ...body } = event;
+        if (sha256(stableJson(body)) !== hash) return false;
+        previous = hash;
+      }
+      return true;
+    } catch {
+      return false;
     }
-    return true;
   }
 }
 
@@ -228,11 +254,18 @@ export class OfflineLicenseVerifier {
       const key = createPublicKey(this.publicKeyPem);
       const validSig = verifySignature(null, Buffer.from(stableJson(license.payload)), key, Buffer.from(license.signatureBase64, 'base64'));
       if (!validSig) return { valid: false, reason: 'Invalid license signature' };
-      if (new Date(license.payload.expiresAt).getTime() <= now.getTime()) return { valid: false, reason: 'License expired' };
+      const expiry = new Date(license.payload.expiresAt).getTime();
+      if (!Number.isFinite(expiry)) return { valid: false, reason: 'Invalid license expiration' };
+      if (expiry <= now.getTime()) return { valid: false, reason: 'License expired' };
       return { valid: true, payload: license.payload };
     } catch (err: any) {
       return { valid: false, reason: err?.message || String(err) };
     }
+  }
+
+  requireFeature(decision: LicenseDecision, feature: string): void {
+    if (!decision.valid || !decision.payload) throw new Error(decision.reason || 'License is not valid');
+    if (!decision.payload.features.includes(feature)) throw new Error(`License does not include feature '${feature}'`);
   }
 }
 
@@ -274,8 +307,10 @@ export class ProductionProjectSession {
 
   readiness(probes: ToolchainProbe[], evidence: SignoffEvidence): ProductionReadinessReport {
     const toolchain = this.toolchains.check(this.manifest, probes);
+    const auditValid = this.audit.verify();
     const signoff = this.signoff.evaluate(this.manifest.signoff ?? {}, { ...evidence, toolchainLocked: toolchain.valid });
     const blockers = [...toolchain.errors, ...signoff.blockers];
-    return { projectValid: true, toolchainValid: toolchain.valid, auditValid: this.audit.verify(), signoff, blockers };
+    if (!auditValid) blockers.push('Audit log integrity failure');
+    return { projectValid: true, toolchainValid: toolchain.valid, auditValid, signoff: { ...signoff, passed: signoff.passed && auditValid }, blockers };
   }
 }
