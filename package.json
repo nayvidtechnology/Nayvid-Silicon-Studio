@@ -10,7 +10,10 @@
   ],
   "scripts": {
     "build": "pnpm --recursive run build",
-    "test": "pnpm --recursive run test"
+    "test": "pnpm --recursive run test",
+    "start": "node ./apps/renderer/dist/index.js",
+    "desktop": "pnpm --filter nayvid-desktop-electron start",
+    "dist": "pnpm build && pnpm --filter nayvid-desktop-electron dist"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

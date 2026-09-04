@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nayvid Silicon Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./src/ui/styles.css">
+</head>
+<body>
+
+  <!-- ========================================================================
+       Top Studio Header Bar
+       ======================================================================== -->
+  <header class="studio-header">
+    <div class="brand-section">
+      <div class="brand-logo">N</div>
+      <div>
+        <span class="brand-title">NAYVID SILICON STUDIO</span>
+      </div>
+      <span class="brand-tagline-chip">AI-NATIVE SILICON IDE</span>
+    </div>
+
+    <div class="header-status-group">
+      <div class="status-chip" title="VeriVisual Engine">
+        <div class="status-dot"></div>
+        <span>VeriVisual</span>
+      </div>
+      <div class="status-chip" title="NAVI AI Agent Engine">
+        <div class="status-dot"></div>
+        <span>NAVI Copilot</span>
+      </div>
+      <div class="status-chip" id="doctor-status-chip" title="EDA Tool Diagnostics">
+        <div class="status-dot"></div>
+        <span id="doctor-summary-text">Doctor: 9/9 Tools</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn btn-primary" id="btn-run-sim">
+        <span>▶</span> Run Sim (tb_counter)
+      </button>
+      <button class="btn btn-accent" id="btn-run-doctor">
+        <span>🩺</span> Doctor Scan
+      </button>
+      <select class="studio-select" id="select-privacy" title="Model Privacy Policy">
+        <option value="ask-before-cloud">🔒 Ask Before Cloud</option>
+        <option value="local-only">🏠 Local Models Only</option>
+        <option value="cloud-allowed">☁️ Cloud Allowed</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       Main Studio Workspace
+       ======================================================================== -->
+  <div class="studio-body">
+
+    <!-- Left Sidebar: Design Navigator -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span>Design Navigator</span>
+        <span class="item-badge" id="sidebar-top-module">counter</span>
+      </div>
+      <div class="sidebar-content" id="sidebar-hierarchy">
+        
+        <div class="nav-section">
+          <div class="nav-section-title">Design Hierarchy</div>
+          <div class="nav-item active" data-mod="counter">
+            <span>📦</span> <strong>counter.sv</strong>
+            <span class="item-badge">Top</span>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">Port Interfaces</div>
+          <div class="nav-item" data-sig="clk">
+            <span>→</span> clk [0:0]
+            <span class="item-badge">Input</span>
+          </div>
+          <div class="nav-item" data-sig="rst_n">
+            <span>→</span> rst_n [0:0]
+            <span class="item-badge">Input</span>
+          </div>
+          <div class="nav-item" data-sig="enable">
+            <span>→</span> enable [0:0]
+            <span class="item-badge">Input</span>
+          </div>
+          <div class="nav-item" data-sig="count">
+            <span>←</span> count [1:0]
+            <span class="item-badge">Output</span>
+          </div>
+          <div class="nav-item" data-sig="done">
+            <span>←</span> done [0:0]
+            <span class="item-badge">Output</span>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">Domains & State Machines</div>
+          <div class="nav-item">
+            <span>⏱️</span> Clock: posedge clk
+          </div>
+          <div class="nav-item">
+            <span>🔄</span> Reset: negedge rst_n
+          </div>
+          <div class="nav-item">
+            <span>⚡</span> FSM: fsm_main (3 states)
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- Center Workbench: Multi-Tab Studio View -->
+    <main class="workbench">
+      <nav class="tab-bar">
+        <button class="tab active" data-tab="rtl">
+          <span>&lt;/&gt;</span> RTL Editor
+        </button>
+        <button class="tab" data-tab="diagram">
+          <span>☵</span> VeriVisual Schematic
+        </button>
+        <button class="tab" data-tab="waveform">
+          <span>📊</span> Waveform Viewer
+        </button>
+        <button class="tab" data-tab="fsm">
+          <span>🔄</span> FSM Graph
+        </button>
+        <button class="tab" data-tab="doctor">
+          <span>🩺</span> Nayvid Doctor
+        </button>
+      </nav>
+
+      <div class="tab-content">
+
+        <!-- Tab 1: RTL Editor -->
+        <section class="view-pane active" id="pane-rtl">
+          <div class="editor-toolbar">
+            <div style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">
+              📄 <strong>examples/counter/rtl/counter.sv</strong> (SystemVerilog IEEE 1800-2017)
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn" id="btn-parse-ir">⚡ Re-Parse Design Graph IR</button>
+              <button class="btn" id="btn-format-rtl">✨ Format RTL</button>
+            </div>
+          </div>
+          <div class="editor-container">
+            <div class="editor-line-numbers" id="editor-lines">
+              1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20<br>21<br>22<br>23<br>24
+            </div>
+            <textarea class="editor-textarea" id="code-editor" spellcheck="false">module counter (
+  input  logic       clk,
+  input  logic       rst_n,
+  input  logic       enable,
+  output logic [1:0] count,
+  output logic       done
+);
+
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      count <= 2'b00;
+      done  <= 1'b0;
+    end else if (enable) begin
+      if (count == 2'b11) begin
+        count <= 2'b00;
+        done  <= 1'b1;
+      end else begin
+        count <= count + 1'b1;
+        done  <= 1'b0;
+      end
+    end
+  end
+
+endmodule
+</textarea>
+          </div>
+        </section>
+
+        <!-- Tab 2: VeriVisual Block Diagram -->
+        <section class="view-pane" id="pane-diagram">
+          <div class="diagram-canvas-container">
+            <div class="diagram-controls">
+              <button class="btn" id="btn-zoom-in">➕ Zoom In</button>
+              <button class="btn" id="btn-zoom-out">➖ Zoom Out</button>
+              <button class="btn" id="btn-zoom-reset">↺ Reset</button>
+            </div>
+            <div class="diagram-svg-wrapper" id="diagram-svg-container">
+              <!-- Rendered SVG Diagram -->
+              <svg width="680" height="380" viewBox="0 0 680 380" style="max-width: 100%;">
+                <defs>
+                  <linearGradient id="grad-module" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#1e293b"/>
+                    <stop offset="100%" stop-color="#0f172a"/>
+                  </linearGradient>
+                  <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#06b6d4" flood-opacity="0.6"/>
+                  </filter>
+                </defs>
+
+                <!-- Center Module Box -->
+                <rect x="220" y="80" width="240" height="220" rx="10" fill="url(#grad-module)" stroke="#3b82f6" stroke-width="2"/>
+                <text x="340" y="115" font-family="'JetBrains Mono', monospace" font-size="16" font-weight="700" fill="#fff" text-anchor="middle">module counter</text>
+                <text x="340" y="135" font-family="'Inter', sans-serif" font-size="11" fill="#94a3b8" text-anchor="middle">Sequential 2-Bit Counter</text>
+
+                <!-- Input Ports (Left) -->
+                <!-- clk -->
+                <line x1="80" y1="130" x2="220" y2="130" stroke="#06b6d4" stroke-width="2"/>
+                <circle cx="80" cy="130" r="5" fill="#06b6d4"/>
+                <text x="70" y="134" font-family="'JetBrains Mono', monospace" font-size="12" fill="#06b6d4" text-anchor="end">clk</text>
+                <polygon points="215,126 222,130 215,134" fill="#06b6d4"/>
+
+                <!-- rst_n -->
+                <line x1="80" y1="180" x2="220" y2="180" stroke="#06b6d4" stroke-width="2"/>
+                <circle cx="80" cy="180" r="5" fill="#06b6d4"/>
+                <text x="70" y="184" font-family="'JetBrains Mono', monospace" font-size="12" fill="#06b6d4" text-anchor="end">rst_n</text>
+                <polygon points="215,176 222,180 215,184" fill="#06b6d4"/>
+
+                <!-- enable -->
+                <line x1="80" y1="230" x2="220" y2="230" stroke="#06b6d4" stroke-width="2"/>
+                <circle cx="80" cy="230" r="5" fill="#06b6d4"/>
+                <text x="70" y="234" font-family="'JetBrains Mono', monospace" font-size="12" fill="#06b6d4" text-anchor="end">enable</text>
+                <polygon points="215,226 222,230 215,234" fill="#06b6d4"/>
+
+                <!-- Output Ports (Right) -->
+                <!-- count [1:0] -->
+                <line x1="460" y1="150" x2="600" y2="150" stroke="#f59e0b" stroke-width="3" filter="url(#glow-cyan)"/>
+                <circle cx="600" cy="150" r="5" fill="#f59e0b"/>
+                <text x="610" y="154" font-family="'JetBrains Mono', monospace" font-size="12" font-weight="700" fill="#f59e0b" text-anchor="start">count [1:0]</text>
+                <polygon points="595,146 602,150 595,154" fill="#f59e0b"/>
+
+                <!-- done -->
+                <line x1="460" y1="220" x2="600" y2="220" stroke="#10b981" stroke-width="2"/>
+                <circle cx="600" cy="220" r="5" fill="#10b981"/>
+                <text x="610" y="224" font-family="'JetBrains Mono', monospace" font-size="12" fill="#10b981" text-anchor="start">done</text>
+                <polygon points="595,216 602,220 595,224" fill="#10b981"/>
+
+                <!-- Internal Logic Box -->
+                <rect x="250" y="160" width="180" height="110" rx="6" fill="#171e30" stroke="#a855f7" stroke-dasharray="3 3"/>
+                <text x="340" y="185" font-family="'JetBrains Mono', monospace" font-size="11" fill="#a855f7" text-anchor="middle">always_ff @(posedge clk)</text>
+                <text x="340" y="210" font-family="'JetBrains Mono', monospace" font-size="11" fill="#94a3b8" text-anchor="middle">Registers: [1:0] count</text>
+                <text x="340" y="235" font-family="'JetBrains Mono', monospace" font-size="11" fill="#10b981" text-anchor="middle">done &lt;= (count == 2'b11)</text>
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab 3: Waveform Viewer -->
+        <section class="view-pane" id="pane-waveform">
+          <div class="waveform-container">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong>Simulation Waveform</strong>: <span style="color: var(--accent-cyan); font-family: var(--font-mono);">tb_counter.vcd</span> (Timescale: 1ns / 1ps)
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn" id="btn-re-sim">⚡ Re-run Sim</button>
+              </div>
+            </div>
+
+            <!-- Time Ruler -->
+            <div class="waveform-ruler">
+              <span>0ns</span>
+              <span>10ns</span>
+              <span>20ns</span>
+              <span>30ns</span>
+              <span>40ns</span>
+              <span>50ns</span>
+              <span>60ns</span>
+              <span>70ns</span>
+              <span>80ns</span>
+            </div>
+
+            <!-- Signal Rows -->
+            <!-- clk -->
+            <div class="waveform-row">
+              <div class="waveform-label"><span style="color: var(--accent-cyan);">→</span> clk</div>
+              <div class="waveform-signal-canvas">
+                <svg width="100%" height="32" viewBox="0 0 600 32" preserveAspectRatio="none">
+                  <path d="M 0 24 L 30 24 L 30 8 L 60 8 L 60 24 L 90 24 L 90 8 L 120 8 L 120 24 L 150 24 L 150 8 L 180 8 L 180 24 L 210 24 L 210 8 L 240 8 L 240 24 L 270 24 L 270 8 L 300 8 L 300 24 L 330 24 L 330 8 L 360 8 L 360 24 L 390 24 L 390 8 L 420 8 L 420 24 L 450 24 L 450 8 L 480 8 L 480 24 L 510 24 L 510 8 L 540 8 L 540 24 L 570 24 L 570 8 L 600 8" fill="none" stroke="#06b6d4" stroke-width="2"/>
+                </svg>
+              </div>
+            </div>
+
+            <!-- rst_n -->
+            <div class="waveform-row">
+              <div class="waveform-label"><span style="color: var(--accent-cyan);">→</span> rst_n</div>
+              <div class="waveform-signal-canvas">
+                <svg width="100%" height="32" viewBox="0 0 600 32" preserveAspectRatio="none">
+                  <path d="M 0 24 L 40 24 L 40 8 L 600 8" fill="none" stroke="#10b981" stroke-width="2"/>
+                </svg>
+              </div>
+            </div>
+
+            <!-- enable -->
+            <div class="waveform-row">
+              <div class="waveform-label"><span style="color: var(--accent-cyan);">→</span> enable</div>
+              <div class="waveform-signal-canvas">
+                <svg width="100%" height="32" viewBox="0 0 600 32" preserveAspectRatio="none">
+                  <path d="M 0 24 L 60 24 L 60 8 L 540 8 L 540 24 L 600 24" fill="none" stroke="#a855f7" stroke-width="2"/>
+                </svg>
+              </div>
+            </div>
+
+            <!-- count[1:0] -->
+            <div class="waveform-row">
+              <div class="waveform-label"><span style="color: var(--accent-amber);">←</span> count [1:0]</div>
+              <div class="waveform-signal-canvas">
+                <svg width="100%" height="32" viewBox="0 0 600 32" preserveAspectRatio="none">
+                  <!-- Bus transitions -->
+                  <polygon points="0,16 10,8 120,8 130,16 120,24 10,24" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b" stroke-width="1.5"/>
+                  <text x="65" y="19" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f59e0b" text-anchor="middle">2'h0</text>
+
+                  <polygon points="120,16 130,8 240,8 250,16 240,24 130,24" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b" stroke-width="1.5"/>
+                  <text x="185" y="19" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f59e0b" text-anchor="middle">2'h1</text>
+
+                  <polygon points="240,16 250,8 360,8 370,16 360,24 250,24" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b" stroke-width="1.5"/>
+                  <text x="305" y="19" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f59e0b" text-anchor="middle">2'h2</text>
+
+                  <polygon points="360,16 370,8 480,8 490,16 480,24 370,24" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b" stroke-width="1.5"/>
+                  <text x="425" y="19" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f59e0b" text-anchor="middle">2'h3</text>
+
+                  <polygon points="480,16 490,8 600,8 600,24 490,24" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b" stroke-width="1.5"/>
+                  <text x="545" y="19" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f59e0b" text-anchor="middle">2'h0</text>
+                </svg>
+              </div>
+            </div>
+
+            <!-- done -->
+            <div class="waveform-row">
+              <div class="waveform-label"><span style="color: var(--accent-green);">←</span> done</div>
+              <div class="waveform-signal-canvas">
+                <svg width="100%" height="32" viewBox="0 0 600 32" preserveAspectRatio="none">
+                  <path d="M 0 24 L 370 24 L 370 8 L 480 8 L 480 24 L 600 24" fill="none" stroke="#10b981" stroke-width="2"/>
+                </svg>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- Tab 4: FSM Graph -->
+        <section class="view-pane" id="pane-fsm">
+          <div class="diagram-canvas-container">
+            <div style="padding: 16px; font-weight: 600;">Finite State Machine Transition Graph: <span style="color: var(--accent-cyan);">fsm_main</span></div>
+            <div class="diagram-svg-wrapper">
+              <svg width="600" height="300" viewBox="0 0 600 300">
+                <!-- State Bubbles -->
+                <!-- IDLE -->
+                <circle cx="120" cy="150" r="45" fill="#1e293b" stroke="#06b6d4" stroke-width="3"/>
+                <text x="120" y="145" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">IDLE</text>
+                <text x="120" y="165" font-family="'JetBrains Mono', monospace" font-size="10" fill="#06b6d4" text-anchor="middle">count=0</text>
+
+                <!-- COUNT -->
+                <circle cx="320" cy="150" r="45" fill="#1e293b" stroke="#a855f7" stroke-width="3"/>
+                <text x="320" y="145" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">COUNT</text>
+                <text x="320" y="165" font-family="'JetBrains Mono', monospace" font-size="10" fill="#a855f7" text-anchor="middle">count++</text>
+
+                <!-- DONE -->
+                <circle cx="500" cy="150" r="45" fill="#1e293b" stroke="#10b981" stroke-width="3"/>
+                <text x="500" y="145" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">DONE</text>
+                <text x="500" y="165" font-family="'JetBrains Mono', monospace" font-size="10" fill="#10b981" text-anchor="middle">done=1</text>
+
+                <!-- Directed Arrows -->
+                <path d="M 165 130 C 210 90, 230 90, 275 130" fill="none" stroke="#94a3b8" stroke-width="2"/>
+                <polygon points="275,130 268,122 265,133" fill="#94a3b8"/>
+                <text x="220" y="95" font-family="'JetBrains Mono', monospace" font-size="10" fill="#94a3b8" text-anchor="middle">enable == 1</text>
+
+                <path d="M 365 130 C 405 90, 420 90, 455 130" fill="none" stroke="#94a3b8" stroke-width="2"/>
+                <polygon points="455,130 448,122 445,133" fill="#94a3b8"/>
+                <text x="410" y="95" font-family="'JetBrains Mono', monospace" font-size="10" fill="#94a3b8" text-anchor="middle">count == 3</text>
+
+                <path d="M 480 190 C 350 280, 250 280, 140 190" fill="none" stroke="#94a3b8" stroke-width="2"/>
+                <polygon points="140,190 148,198 152,187" fill="#94a3b8"/>
+                <text x="310" y="270" font-family="'JetBrains Mono', monospace" font-size="10" fill="#94a3b8" text-anchor="middle">rst_n == 0 | next_cycle</text>
+              </svg>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tab 5: Nayvid Doctor Diagnostics -->
+        <section class="view-pane" id="pane-doctor">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <div>
+              <h2 style="font-size: 16px; font-weight: 700;">Nayvid Doctor Environment Diagnostics</h2>
+              <p style="color: var(--text-muted); font-size: 12px;">Automatic detection of open-source EDA compilers, simulators, synthesis engines, and P&R toolchains.</p>
+            </div>
+            <button class="btn btn-accent" id="btn-refresh-doctor">🔄 Re-scan All Tools</button>
+          </div>
+
+          <div class="doctor-grid" id="doctor-grid-container">
+            <!-- Tool Cards injected by JS -->
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- Right Drawer: NAVI AI Copilot & Signal Intelligence -->
+    <aside class="copilot-panel">
+      <div class="copilot-header">
+        <div class="copilot-title">
+          <span>✨</span> NAVI AI Copilot
+        </div>
+        <select class="studio-select" id="select-skill">
+          <option value="waveform-debugger">Waveform Debugger</option>
+          <option value="rtl-engineer">RTL Engineer</option>
+          <option value="verification-engineer">Verification Engineer</option>
+          <option value="pnr-specialist">P&R / Synthesis</option>
+        </select>
+      </div>
+
+      <div class="copilot-body">
+        <!-- Chat message thread -->
+        <div class="chat-stream" id="chat-stream">
+          <div class="chat-msg navi">
+            <div class="msg-bubble">
+              👋 <strong>Welcome to Nayvid Silicon Studio!</strong> I am NAVI, your AI silicon engineering assistant. I can help you debug waveforms, write SVA assertions, synthesize RTL, and diagnose EDA environments.
+            </div>
+          </div>
+        </div>
+
+        <!-- Prompt Suggestions -->
+        <div class="prompt-suggestions">
+          <button class="suggestion-pill" data-prompt="Why is count incrementing as expected?">💡 Why is count incrementing?</button>
+          <button class="suggestion-pill" data-prompt="Generate SVA formal assertions for done pulse.">🛡️ Generate SVA Assertions</button>
+          <button class="suggestion-pill" data-prompt="Synthesize counter with Yosys.">⚡ Synthesize Module</button>
+        </div>
+
+        <!-- Input Box -->
+        <div class="copilot-input-box">
+          <input type="text" class="copilot-input" id="input-navi" placeholder="Ask NAVI anything about your RTL or waveform...">
+          <button class="btn btn-primary" id="btn-send-navi">Send</button>
+        </div>
+
+        <!-- Live Tool Activity Timeline -->
+        <div class="timeline-section">
+          <div class="timeline-title">Agent Tool Execution Timeline</div>
+          <div id="timeline-list">
+            <div class="timeline-item">
+              <span class="timeline-badge">READY</span>
+              <span>Subsystems initialized & standing by.</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ========================================================================
+       Bottom Status Bar
+       ======================================================================== -->
+  <footer class="studio-footer">
+    <div class="footer-left">
+      <span>● Studio Online</span>
+      <span>Top: <strong style="color: var(--accent-cyan);">counter</strong></span>
+      <span>File: <span style="font-family: var(--font-mono);">rtl/counter.sv</span></span>
+    </div>
+    <div class="footer-right">
+      <span>Language: SystemVerilog 2017</span>
+      <span>Privacy: <span style="color: var(--accent-green);">Ask-Before-Cloud</span></span>
+      <span>Nayvid IDE v0.1.0</span>
+    </div>
+  </footer>
+
+  <script type="module" src="./src/ui/desktop-ui.js"></script>
+</body>
+</html>

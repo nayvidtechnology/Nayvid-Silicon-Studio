@@ -6,7 +6,8 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start": "node ./dist/index.js"
   },
   "dependencies": {
     "@nayvid/design-ir": "workspace:*",

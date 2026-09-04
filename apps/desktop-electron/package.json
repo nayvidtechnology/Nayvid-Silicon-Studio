@@ -6,16 +6,46 @@
   "main": "./dist/main.js",
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start": "electron .",
+    "dist": "electron-builder --dir",
+    "dist:win": "electron-builder --win",
+    "dist:all": "electron-builder -mwl"
+  },
+  "build": {
+    "appId": "com.nayvid.siliconstudio",
+    "productName": "Nayvid Silicon Studio",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "../renderer/index.html",
+      "../renderer/dist/**/*",
+      "../../packages/**/dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
-    "@nayvid/execution-runtime": "workspace:*",
-    "@nayvid/tool-registry": "workspace:*",
+    "@nayvid/agent-tools": "workspace:*",
     "@nayvid/ai-core": "workspace:*",
+    "@nayvid/execution-runtime": "workspace:*",
     "@nayvid/model-providers": "workspace:*",
-    "@nayvid/agent-tools": "workspace:*"
+    "@nayvid/tool-registry": "workspace:*"
   },
   "devDependencies": {
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5"
   }
