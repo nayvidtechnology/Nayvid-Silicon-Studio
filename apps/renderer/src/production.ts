@@ -10,6 +10,12 @@ import {
   type ToolchainProbe,
   type ProductionReadinessReport,
 } from '@nayvid/platform-core';
+import {
+  MetricEvidenceStore,
+  RecordedSignoffEvidenceCollector,
+  type MetricKind,
+  type RecordedSignoffEvidence,
+} from '@nayvid/platform-core/signoff-evidence';
 import { SlangCliAdapter, type SlangElaborationResult } from '@nayvid/hdl-language/slang-cli';
 import { AgentToolGateway, type ToolResult } from '@nayvid/agent-tools';
 
@@ -154,17 +160,56 @@ export class StudioProductionController {
     return { run: finished, result, evidence };
   }
 
+  recordMetricEvidence(role: ProjectRole, actor: string, kind: MetricKind, value: number, sourceRunId?: string, toolId?: string): ArtifactRef {
+    const session = this.getSession();
+    session.rbac.require(role, 'run:execute');
+    if (sourceRunId) {
+      const run = session.runs.get(sourceRunId);
+      if (!run) throw new Error(`Unknown metric source run: ${sourceRunId}`);
+      if (run.projectDigest !== session.projectDigest) throw new Error(`Metric source run '${sourceRunId}' belongs to another project digest`);
+      if (run.status !== 'passed') throw new Error(`Metric source run '${sourceRunId}' is not passing`);
+    }
+    const ref = new MetricEvidenceStore(session.artifacts).put(kind, value, sourceRunId, toolId);
+    session.audit.append({ actor, action: 'metric:record', resource: kind, outcome: 'success', details: { value, sourceRunId, toolId, digest: ref.digest } });
+    return ref;
+  }
+
   readiness(role: ProjectRole, probes: ToolchainProbe[], evidence: SignoffEvidence): ProductionReadinessReport {
     const session = this.getSession();
     session.rbac.require(role, 'project:read');
     return session.readiness(probes, evidence);
   }
 
-  approveSignoff(role: ProjectRole, actor: string, probes: ToolchainProbe[], evidence: SignoffEvidence): ProductionReadinessReport {
+  recordedReadiness(role: ProjectRole, probes: ToolchainProbe[], metricRefs: ArtifactRef[]): { report: ProductionReadinessReport; recorded: RecordedSignoffEvidence } {
+    const session = this.getSession();
+    session.rbac.require(role, 'project:read');
+    const toolchain = session.toolchains.check(session.manifest, probes);
+    const recorded = new RecordedSignoffEvidenceCollector(session.artifacts).collect(session.runs.list(), metricRefs, session.projectDigest);
+    const auditValid = session.audit.verify();
+    const signoff = session.signoff.evaluate(session.manifest.signoff ?? {}, { ...recorded.evidence, toolchainLocked: toolchain.valid });
+    const blockers = [...toolchain.errors, ...recorded.blockers, ...signoff.blockers];
+    if (!auditValid) blockers.push('Audit log integrity failure');
+    const report: ProductionReadinessReport = {
+      projectValid: true,
+      toolchainValid: toolchain.valid,
+      auditValid,
+      signoff: { ...signoff, passed: blockers.length === 0 },
+      blockers,
+    };
+    return { report, recorded };
+  }
+
+  approveSignoff(role: ProjectRole, actor: string, probes: ToolchainProbe[], metricRefs: ArtifactRef[]): ProductionReadinessReport {
     const session = this.getSession();
     session.rbac.require(role, 'signoff:approve');
-    const report = session.readiness(probes, evidence);
-    session.audit.append({ actor, action: 'signoff:approve', resource: session.manifest.name, outcome: report.blockers.length ? 'denied' : 'success', details: { blockers: report.blockers, score: report.signoff.score } });
+    const { report, recorded } = this.recordedReadiness(role, probes, metricRefs);
+    session.audit.append({
+      actor,
+      action: 'signoff:approve',
+      resource: session.manifest.name,
+      outcome: report.blockers.length ? 'denied' : 'success',
+      details: { blockers: report.blockers, score: report.signoff.score, runIds: recorded.runIds, metricArtifacts: recorded.metricArtifacts },
+    });
     if (report.blockers.length) throw new Error(`Signoff blocked: ${report.blockers.join('; ')}`);
     return report;
   }
