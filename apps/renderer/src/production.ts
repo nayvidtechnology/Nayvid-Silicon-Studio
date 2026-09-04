@@ -11,6 +11,7 @@ import {
   type ProductionReadinessReport,
 } from '@nayvid/platform-core';
 import { SlangCliAdapter, type SlangElaborationResult } from '@nayvid/hdl-language/slang-cli';
+import { AgentToolGateway, type ToolResult } from '@nayvid/agent-tools';
 
 interface ElaboratorLike {
   elaborate(request: {
@@ -23,16 +24,32 @@ interface ElaboratorLike {
   }): Promise<SlangElaborationResult>;
 }
 
+interface ToolGatewayLike {
+  executeTool(name: string, args: Record<string, any>, approved?: boolean): Promise<ToolResult>;
+}
+
+type ToolGatewayFactory = (workspaceRoot: string, allowedRuntimes?: Array<'native-windows' | 'wsl2' | 'linux' | 'docker'>) => ToolGatewayLike;
+
 export class StudioProductionController {
   private session?: ProductionProjectSession;
   private manifestService = new ProjectManifestService();
+  private gateway?: ToolGatewayLike;
 
-  constructor(private elaborator: ElaboratorLike = new SlangCliAdapter()) {}
+  constructor(
+    private elaborator: ElaboratorLike = new SlangCliAdapter(),
+    private gatewayFactory: ToolGatewayFactory = (workspaceRoot, allowedRuntimes) => new AgentToolGateway(undefined, {
+      workspaceRoot,
+      allowedRuntimes,
+      externalCommandAllowlist: ['git'],
+      maxTimeoutMs: 10 * 60 * 1000,
+    })
+  ) {}
 
   openProject(manifestPath: string, actor = 'local-user'): ProductionProjectSession {
     const absolute = path.resolve(manifestPath);
     const manifest = this.manifestService.loadJson(absolute);
     this.session = new ProductionProjectSession(path.dirname(absolute), manifest);
+    this.gateway = this.gatewayFactory(this.session.workspaceRoot, manifest.security?.allowedRuntimes);
     this.session.audit.append({ actor, action: 'project:open', resource: manifest.name, outcome: 'success', details: { manifestPath: path.basename(absolute), projectDigest: this.session.projectDigest } });
     return this.session;
   }
@@ -40,6 +57,11 @@ export class StudioProductionController {
   getSession(): ProductionProjectSession {
     if (!this.session) throw new Error('No production project is open');
     return this.session;
+  }
+
+  private getGateway(): ToolGatewayLike {
+    if (!this.gateway) throw new Error('No production project is open');
+    return this.gateway;
   }
 
   async elaborate(role: ProjectRole, actor: string): Promise<SlangElaborationResult> {
@@ -69,8 +91,8 @@ export class StudioProductionController {
       kind: input.kind,
       projectDigest: session.projectDigest,
       toolchainDigest: input.toolchainDigest,
-      command: input.command,
-      args: input.args,
+      command: session.redactor.redact(input.command),
+      args: input.args.map((arg) => session.redactor.redact(arg)),
       cwd: input.cwd ?? '.',
     });
     session.audit.append({ actor, action: 'run:begin', resource: run.id, outcome: 'success', details: { kind: run.kind, command: run.command } });
@@ -83,7 +105,7 @@ export class StudioProductionController {
     const ref = session.artifacts.put(logicalName, typeof data === 'string' ? session.redactor.redact(data) : data, mediaType);
     const run = session.runs.get(runId);
     if (!run) throw new Error(`Unknown run: ${runId}`);
-    session.runs.finish(runId, { status: run.status, artifacts: [...run.artifacts, ref] });
+    session.runs.update(runId, { artifacts: [...run.artifacts, ref] });
     session.audit.append({ actor, action: 'evidence:attach', resource: runId, outcome: 'success', details: { logicalName, digest: ref.digest } });
     return ref;
   }
@@ -92,8 +114,43 @@ export class StudioProductionController {
     const session = this.getSession();
     session.rbac.require(role, 'run:execute');
     const run = session.runs.finish(runId, { status, exitCode });
-    session.audit.append({ actor, action: 'run:finish', resource: runId, outcome: status === 'passed' ? 'success' : 'failure', details: { status, exitCode } });
+    session.audit.append({ actor, action: 'run:finish', resource: runId, outcome: status === 'passed' ? 'success' : status === 'cancelled' ? 'denied' : 'failure', details: { status, exitCode } });
     return run;
+  }
+
+  async executeEvidenceRun(role: ProjectRole, actor: string, input: {
+    kind: RunKind;
+    toolchainDigest: string;
+    toolName: string;
+    toolArgs: Record<string, any>;
+    approved?: boolean;
+  }): Promise<{ run: RunRecord; result: ToolResult; evidence: ArtifactRef }> {
+    const session = this.getSession();
+    const run = this.beginRun(role, actor, {
+      kind: input.kind,
+      toolchainDigest: input.toolchainDigest,
+      command: `agent:${input.toolName}`,
+      args: [JSON.stringify(input.toolArgs)],
+    });
+
+    const result = await this.getGateway().executeTool(input.toolName, input.toolArgs, input.approved ?? false);
+    const evidenceBody = JSON.stringify({
+      toolName: input.toolName,
+      success: result.success,
+      output: result.output,
+      error: result.error,
+      runtimeUsed: result.runtimeUsed,
+      exitCode: result.exitCode,
+    }, null, 2);
+    const evidence = this.attachEvidence(role, actor, run.id, `${input.kind}-${run.id}.json`, evidenceBody, 'application/json');
+    session.runs.update(run.id, {
+      runtime: result.runtimeUsed,
+      stdoutDigest: result.success ? evidence.digest : undefined,
+      stderrDigest: result.success ? undefined : evidence.digest,
+    });
+    const status = result.success ? 'passed' : result.requiresApproval ? 'cancelled' : 'failed';
+    const finished = this.finishRun(role, actor, run.id, status, result.exitCode);
+    return { run: finished, result, evidence };
   }
 
   readiness(role: ProjectRole, probes: ToolchainProbe[], evidence: SignoffEvidence): ProductionReadinessReport {
