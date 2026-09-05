@@ -1,12 +1,10 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import * as fs from 'fs';
 import { ExecutionRuntimeManager, type RuntimeType } from '@nayvid/execution-runtime';
 import { NayvidDoctorService } from '@nayvid/tool-registry';
 import { AgentToolGateway, type ToolResult } from '@nayvid/agent-tools';
-import { ProjectManifestService, type ProjectManifest } from '@nayvid/platform-core';
-import { SiliconStudioApp } from 'nayvid-renderer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,10 +24,25 @@ interface StudioLike {
   setPrivacyPolicy(policy: any): void;
 }
 
+export interface DesktopProjectManifest {
+  schemaVersion: 1;
+  name: string;
+  topModule: string;
+  sources: string[];
+  includeDirs?: string[];
+  constraints?: string[];
+  verification?: { testbenchTop: string; sources: string[]; output?: string; waveformPath: string };
+  defines?: Record<string, string | number | boolean>;
+  parameters?: Record<string, string | number | boolean>;
+  toolchain?: Array<{ toolId: string; version?: string; required?: boolean; runtimes?: Array<'native-windows' | 'wsl2' | 'linux' | 'docker'> }>;
+  signoff?: { requireCompile?: boolean; requireSimulation?: boolean; requireToolchainLock?: boolean };
+  security?: { allowedRuntimes?: Array<'native-windows' | 'wsl2' | 'linux' | 'docker'>; cloudAi?: 'disabled' | 'approval-required' | 'allowed'; requireLockedToolchain?: boolean };
+}
+
 export interface DesktopProjectDescriptor {
   root: string;
   manifestPath: string;
-  manifest: ProjectManifest;
+  manifest: DesktopProjectManifest;
   files: string[];
 }
 
@@ -63,6 +76,28 @@ function validateModuleName(name: string): void {
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) throw new Error(`Invalid SystemVerilog top module name: ${name}`);
 }
 
+function validateManifest(manifest: DesktopProjectManifest): string[] {
+  const errors: string[] = [];
+  if (manifest.schemaVersion !== 1) errors.push('schemaVersion must be 1');
+  if (!manifest.name?.trim()) errors.push('Project name is required');
+  if (!manifest.topModule?.trim()) errors.push('topModule is required');
+  if (!manifest.sources?.length) errors.push('At least one RTL source is required');
+  const validateRelative = (value: string, label: string) => {
+    if (!value || path.isAbsolute(value) || value.split(/[\\/]+/).includes('..')) errors.push(`${label} must stay inside the project workspace: ${value}`);
+  };
+  for (const source of manifest.sources ?? []) validateRelative(source, 'Source path');
+  for (const source of manifest.verification?.sources ?? []) validateRelative(source, 'Verification source path');
+  for (const source of manifest.constraints ?? []) validateRelative(source, 'Constraint path');
+  return errors;
+}
+
+function loadManifest(filePath: string): DesktopProjectManifest {
+  const manifest = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as DesktopProjectManifest;
+  const errors = validateManifest(manifest);
+  if (errors.length) throw new Error(`Invalid project manifest: ${errors.join('; ')}`);
+  return manifest;
+}
+
 function defaultRtl(topModule: string): string {
   return `module ${topModule} (\n  input  logic       clk,\n  input  logic       rst_n,\n  input  logic       enable,\n  output logic [1:0] count,\n  output logic       done\n);\n\n  always_ff @(posedge clk or negedge rst_n) begin\n    if (!rst_n) begin\n      count <= 2'b00;\n      done  <= 1'b0;\n    end else if (enable) begin\n      if (count == 2'b11) begin\n        count <= 2'b00;\n        done  <= 1'b1;\n      end else begin\n        count <= count + 1'b1;\n        done  <= 1'b0;\n      end\n    end\n  end\nendmodule\n`;
 }
@@ -82,10 +117,9 @@ export class DesktopBridge {
   private gateway: GatewayLike;
   private workspaceRoot: string;
   private activeProject?: DesktopProjectDescriptor;
-  private manifestService = new ProjectManifestService();
   private injectedGateway?: GatewayLike;
-  private studioFactory: (gateway: GatewayLike) => StudioLike;
-  private studio: StudioLike;
+  private studioFactory?: (gateway: GatewayLike) => StudioLike;
+  private studio?: StudioLike;
 
   constructor(options: DesktopBridgeOptions = {}) {
     this.workspaceRoot = path.resolve(options.workspaceRoot ?? process.cwd());
@@ -93,14 +127,23 @@ export class DesktopBridge {
     this.doctor = options.doctor ?? new NayvidDoctorService();
     this.injectedGateway = options.gateway;
     this.gateway = options.gateway ?? new AgentToolGateway(this.runtimeManager, { workspaceRoot: this.workspaceRoot });
-    this.studioFactory = options.studioFactory ?? ((gateway) => new SiliconStudioApp({ agentGateway: gateway }));
-    this.studio = this.studioFactory(this.gateway);
+    this.studioFactory = options.studioFactory;
+    if (this.studioFactory) this.studio = this.studioFactory(this.gateway);
   }
 
   private activateWorkspace(root: string): void {
     this.workspaceRoot = path.resolve(root);
     this.gateway = this.injectedGateway ?? new AgentToolGateway(this.runtimeManager, { workspaceRoot: this.workspaceRoot });
-    this.studio = this.studioFactory(this.gateway);
+    this.studio = this.studioFactory ? this.studioFactory(this.gateway) : undefined;
+  }
+
+  private async getStudio(): Promise<StudioLike> {
+    if (this.studio) return this.studio;
+    const appModulePath = path.resolve(__dirname, '../../renderer/dist/app.js');
+    if (!fs.existsSync(appModulePath)) throw new Error(`Renderer Studio core is not built: ${appModulePath}`);
+    const module = await import(pathToFileURL(appModulePath).href);
+    this.studio = new module.SiliconStudioApp({ agentGateway: this.gateway }) as StudioLike;
+    return this.studio;
   }
 
   private resolveWorkspacePath(inputPath: string): string {
@@ -126,7 +169,7 @@ export class DesktopBridge {
     return files.sort();
   }
 
-  private verifyManifestFiles(root: string, manifest: ProjectManifest): void {
+  private verifyManifestFiles(root: string, manifest: DesktopProjectManifest): void {
     const validate = (source: string, label: string) => {
       const absolute = path.resolve(root, source);
       const relative = path.relative(root, absolute);
@@ -160,7 +203,7 @@ export class DesktopBridge {
       const rtlPath = `rtl/${topModule}.sv`;
       const tbPath = `tb/${topModule}_tb.sv`;
       const sdcPath = `constraints/${topModule}.sdc`;
-      const manifest: ProjectManifest = {
+      const manifest: DesktopProjectManifest = {
         schemaVersion: 1,
         name: input.name.trim(),
         topModule,
@@ -181,7 +224,7 @@ export class DesktopBridge {
         signoff: { requireCompile: true, requireSimulation: true, requireToolchainLock: false },
         security: { cloudAi: 'approval-required' },
       };
-      const errors = this.manifestService.validate(manifest);
+      const errors = validateManifest(manifest);
       if (errors.length) throw new Error(`Generated project manifest is invalid: ${errors.join('; ')}`);
 
       fs.writeFileSync(path.join(root, rtlPath), defaultRtl(topModule), 'utf-8');
@@ -203,7 +246,7 @@ export class DesktopBridge {
       ? path.join(candidate, 'nayvid.project.json')
       : candidate;
     if (!fs.existsSync(manifestPath) || !fs.statSync(manifestPath).isFile()) throw new Error(`Nayvid project manifest not found: ${inputPath}`);
-    const manifest = this.manifestService.loadJson(manifestPath);
+    const manifest = loadManifest(manifestPath);
     const root = path.dirname(manifestPath);
     this.verifyManifestFiles(root, manifest);
     this.activateWorkspace(root);
@@ -259,17 +302,17 @@ export class DesktopBridge {
         return { success: true, content, formatter: 'nayvid-whitespace-normalizer' };
       }
       case 'nayvid:studio-open-file':
-        return this.studio.openFile(payload.path, payload.content, payload.topModule ?? this.activeProject?.manifest.topModule);
+        return (await this.getStudio()).openFile(payload.path, payload.content, payload.topModule ?? this.activeProject?.manifest.topModule);
       case 'nayvid:studio-diagram':
-        return this.studio.getBlockDiagram();
+        return (await this.getStudio()).getBlockDiagram();
       case 'nayvid:studio-simulation':
-        return this.studio.runSimulation(payload);
+        return (await this.getStudio()).runSimulation(payload);
       case 'nayvid:studio-navi':
-        return this.studio.askNavi(payload.query, payload.skill, payload.options);
+        return (await this.getStudio()).askNavi(payload.query, payload.skill, payload.options);
       case 'nayvid:studio-timeline':
-        return this.studio.getTimeline();
+        return (await this.getStudio()).getTimeline();
       case 'nayvid:studio-privacy':
-        this.studio.setPrivacyPolicy(payload.policy);
+        (await this.getStudio()).setPrivacyPolicy(payload.policy);
         return { success: true };
       default:
         throw new Error(`Unknown desktop IPC channel: ${channel}`);
