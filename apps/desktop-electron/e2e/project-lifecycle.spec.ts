@@ -41,7 +41,7 @@ test('creates a project and every critical project/editor/sim click performs an 
     await page.getByTestId('project-submit').click();
 
     await expect(page.getByTestId('active-project')).toHaveText('playwright-chip');
-    await expect(page.locator('#code-editor')).toContainText('module chip_top');
+    await expect(page.locator('#code-editor')).toHaveValue(/module chip_top/);
     expect(fs.existsSync(path.join(projectRoot, 'nayvid.project.json'))).toBe(true);
     expect(fs.existsSync(path.join(projectRoot, 'rtl', 'chip_top.sv'))).toBe(true);
     expect(fs.existsSync(path.join(projectRoot, 'tb', 'chip_top_tb.sv'))).toBe(true);
@@ -113,7 +113,7 @@ test('opens an existing project from the UI and binds the editor to that project
     await page.getByTestId('project-manifest-path').fill(manifestPath);
     await page.getByTestId('project-submit').click();
     await expect(page.getByTestId('active-project')).toHaveText('existing-chip');
-    await expect(page.locator('#code-editor')).toContainText('module existing_top');
+    await expect(page.locator('#code-editor')).toHaveValue(/module existing_top/);
     await expect(page.locator('#sidebar-top-module')).toHaveText('existing_top');
   } finally {
     await app.close();
