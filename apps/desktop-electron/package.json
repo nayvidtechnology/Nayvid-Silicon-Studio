@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "start": "electron .",
+    "start": "pnpm --filter nayvid-renderer build && tsc && electron .",
     "dist": "electron-builder --dir",
     "dist:win": "electron-builder --win",
     "dist:all": "electron-builder -mwl"
@@ -20,7 +20,6 @@
     },
     "files": [
       "dist/**/*",
-      "../renderer/index.html",
       "../renderer/dist/**/*",
       "../../packages/**/dist/**/*",
       "package.json"
@@ -41,7 +40,9 @@
     "@nayvid/ai-core": "workspace:*",
     "@nayvid/execution-runtime": "workspace:*",
     "@nayvid/model-providers": "workspace:*",
-    "@nayvid/tool-registry": "workspace:*"
+    "@nayvid/platform-core": "workspace:*",
+    "@nayvid/tool-registry": "workspace:*",
+    "nayvid-renderer": "workspace:*"
   },
   "devDependencies": {
     "electron": "^44.1.1",
