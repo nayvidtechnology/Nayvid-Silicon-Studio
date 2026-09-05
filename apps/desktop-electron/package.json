@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:e2e": "playwright test -c playwright.config.ts",
     "start": "pnpm --filter nayvid-renderer build && tsc && electron .",
     "dist": "electron-builder --dir",
     "dist:win": "electron-builder --win",
@@ -45,6 +46,7 @@
     "nayvid-renderer": "workspace:*"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "electron": "^44.1.1",
     "electron-builder": "^26.15.3",
     "typescript": "^5.5.4",
