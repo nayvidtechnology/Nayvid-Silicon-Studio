@@ -114,3 +114,34 @@ jobs:
         env:
           NAYVID_REAL_SLANG: '1'
         run: pnpm --filter @nayvid/hdl-language test
+
+  linux-desktop-e2e:
+    name: Ubuntu / Electron Playwright project lifecycle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.20.0'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Install desktop EDA and display dependencies
+        run: sudo apt-get update && sudo apt-get install -y iverilog xvfb
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Run Electron Playwright E2E
+        run: xvfb-run -a pnpm --filter nayvid-desktop-electron test:e2e
