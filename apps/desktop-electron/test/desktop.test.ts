@@ -142,4 +142,10 @@ describe('Desktop Bridge IPC', () => {
     const { bridge } = fixture();
     await expect(bridge.handleIPC('danger:unknown', {})).rejects.toThrow(/Unknown desktop IPC channel/);
   });
+
+  it('does not expose an unrestricted command execution IPC', async () => {
+    const { bridge } = fixture();
+    await expect(bridge.handleIPC('nayvid:exec', { command: 'sh', args: ['-c', 'echo unsafe'] }))
+      .rejects.toThrow(/Unknown desktop IPC channel/);
+  });
 });
