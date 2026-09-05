@@ -41,9 +41,7 @@
     "@nayvid/ai-core": "workspace:*",
     "@nayvid/execution-runtime": "workspace:*",
     "@nayvid/model-providers": "workspace:*",
-    "@nayvid/platform-core": "workspace:*",
-    "@nayvid/tool-registry": "workspace:*",
-    "nayvid-renderer": "workspace:*"
+    "@nayvid/tool-registry": "workspace:*"
   },
   "devDependencies": {
     "electron": "^44.1.1",
