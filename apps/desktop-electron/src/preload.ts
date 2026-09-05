@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 const ALLOWED_CHANNELS = new Set([
   'nayvid:doctor',
-  'nayvid:exec',
   'navi:tool',
   'nayvid:project-create',
   'nayvid:project-open',

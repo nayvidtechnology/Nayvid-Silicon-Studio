@@ -267,11 +267,6 @@ export class DesktopBridge {
     switch (channel) {
       case 'nayvid:doctor':
         return this.doctor.runDiagnostics(payload.runtime ?? 'auto');
-      case 'nayvid:exec': {
-        if (!payload.command || typeof payload.command !== 'string') throw new Error('Executable command is required.');
-        const backend = await this.runtimeManager.resolveBestBackend(payload.runtime ?? 'auto');
-        return backend.execute(payload.command, payload.args || [], payload.options);
-      }
       case 'navi:tool':
         return this.gateway.executeTool(payload.name, payload.args || {}, payload.approved ?? false);
       case 'nayvid:project-create':
@@ -335,10 +330,17 @@ export function createMainWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false,
+      sandbox: true,
     },
     autoHideMenuBar: true,
     show: false,
+  });
+
+  // The workbench is a local application. Never allow project content or links to
+  // turn its privileged window into a general-purpose browser.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (navigationUrl !== mainWindow?.webContents.getURL()) event.preventDefault();
   });
 
   const possiblePaths = [
