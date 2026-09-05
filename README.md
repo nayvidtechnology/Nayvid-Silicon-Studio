@@ -9,14 +9,14 @@
 </p>
 
 <p align="center">
-  <strong>Design. Verify. Visualize. Build Silicon.</strong>
+  <strong>NAVI Silicon Agent Runtime (NSAR) — Cross-Vendor, Cross-Layer ECO Negotiation & Evidence-Backed Autonomy</strong>
 </p>
 
 ---
 
 ## Overview
 
-**Nayvid Silicon Studio** is a local-first visual and agentic silicon engineering workbench. It combines a desktop IDE, structured RTL design intelligence, deterministic EDA execution, waveform analysis, verification utilities, and privacy-aware AI model routing.
+**Nayvid Silicon Studio** is a local-first visual and agentic silicon engineering workbench powered by **NAVI Silicon Agent Runtime (NSAR)**. It combines a desktop IDE, structured RTL design intelligence, cross-vendor EDA execution, semantic design memory, cross-layer ECO negotiation, evidence-backed autonomy, and local zero-egress operation.
 
 The product is designed for:
 
@@ -24,27 +24,34 @@ The product is designed for:
 - **Windows + WSL2** for Linux-first EDA flows
 - **Linux native**
 - **Docker** as an additional execution backend
+- **Compute Farms** (Slurm, LSF, SSH, Kubernetes) for distributed EDA execution
 
 The Studio does not report a tool operation as successful unless the underlying operation succeeds. Missing tools, missing files, failed simulations, and unavailable waveforms are surfaced as failures instead of being replaced with demo data.
 
-## Key Capabilities
+## Key Capabilities & Differentiation
 
+- **NAVI Silicon Agent Runtime (NSAR)** — deterministic 7-stage state machine loop (`OBJECTIVE -> OBSERVE -> PLAN -> PRE-HOOK CHAIN -> EXECUTE -> POST-HOOK CHAIN -> VERIFY -> COMMIT/ROLLBACK -> LEARN`).
+- **Silicon Knowledge Graph** — common engineering memory extending Design Graph IR with logical, physical, timing, verification, and provenance graph nodes.
+- **ECO Negotiation Bus** — cross-domain negotiation using typed `NegotiationTicket` objects and multi-agent proposal arbitration.
+- **Universal Tool Bus** — vendor-neutral intent APIs with adapters for OpenROAD, Yosys, OpenSTA, PrimeTime, Innovus, Design Compiler, Calibre, VCS, Xcelium, and Questa.
+- **Agent Harness & Safety** — `nayvid.io/v1` agent manifests, global pre/post hook chains, deterministic hard gates, zero-egress context firewall, and git/snapshot rollback.
+- **Engineering Learning Core** — 4 controlled learning levels (Session Memory, Project Memory, Engineering Playbook, Learned Policy / Optimizers) and candidate promotion pipeline (`CANDIDATE` -> `QUALIFIED` -> `PRODUCTION`).
 - **VeriVisual** — block-diagram models, VCD parsing, hierarchical waveform metadata, and signal intelligence.
-- **NAVI** — specialist AI workflows with workspace context, privacy policy enforcement, tool approval guardrails, and execution timeline.
-- **Design Graph IR** — modules, ports, signals, driver expressions, dependencies, instances, FSMs, source locations, clock domains, and reset domains.
-- **Verification Cockpit** — regression/assertion summaries, coverage scoring, and uncovered-area identification.
-- **Design Health** — weighted compile/lint/simulation/assertion/coverage/CDC/constraint/timing health assessment.
-- **Traceability Matrix** — requirement → RTL → test → assertion coverage and gap analysis.
-- **Register Map Generator** — validation plus SystemVerilog package, C header, Rust constants, and Markdown generation.
-- **Formal Assistant** — reusable SVA helpers such as FIFO underflow/overflow and bounded request/response properties.
-- **PPA Explorer** — area/power/performance/timing comparison and candidate ranking.
-- **Verification Plan Generator** — DesignGraph-derived verification objectives.
-- **Nayvid Doctor** — real tool detection through compatible Native Windows, WSL2, Linux, or Docker runtimes.
+- **Verification Cockpit & Health** — regression/assertion summaries, coverage scoring, CDC/timing health assessment, and traceability matrix.
+- **Nayvid Doctor** — real tool detection through compatible Native Windows, WSL2, Linux, Docker, or compute farm runtimes.
 
 ## Architecture & Packages
 
 | Subsystem | Package | Purpose |
 |---|---|---|
+| Silicon Knowledge Graph | `@nayvid/silicon-graph` | Shared semantic engineering memory and graph query API |
+| ECO Negotiation Bus | `@nayvid/negotiation-bus` | Typed negotiation protocol and proposal arbitration |
+| Universal Tool Bus | `@nayvid/eda-adapters` | Vendor-neutral EDA intent APIs and tool adapters |
+| Runner Fabric | `@nayvid/runner-fabric` | Local, WSL, SSH, Slurm, LSF, K8s compute and license broker |
+| Agent Verification Harness | `@nayvid/agent-harness` | Agent manifests, pre/post hook chains, rollback, hard gates |
+| Silicon Agent Runtime | `@nayvid/agent-runtime` | Deterministic state machine, L0-L4 levels, T0-T5 trust levels, zero-egress firewall |
+| Learning Core | `@nayvid/learning-core` | Playbooks, Bayesian optimizers, strategy promotion pipeline |
+| Squad Agent Registry | `@nayvid/agent-registry` | Architecture, RTL, Verification, Timing, Physical, Signoff, Platform squads & 9-agent swarm |
 | VeriVisual | `@nayvid/verivisual` | Block diagrams, VCD/waveform parsing, signal intelligence |
 | NAVI AI Core | `@nayvid/ai-core` | Context engine, privacy-aware routing, agent timeline |
 | Model Providers | `@nayvid/model-providers` | OpenAI, Anthropic, Gemini, and Ollama API adapters |
@@ -57,18 +64,19 @@ The Studio does not report a tool operation as successful unless the underlying 
 | Desktop Electron | `apps/desktop-electron` | Secure desktop process and IPC bridge |
 | Studio Workbench | `apps/renderer` | Interactive Silicon Studio application logic and UI |
 
-## Registered Open-Source Toolchain
+## 9-Agent Production Swarm Vertical Slice
 
-Nayvid Doctor knows about the following tool families and selects only compatible runtimes:
+NSAR features a production 9-agent swarm configured to close setup timing while preserving functional behavior and minimizing PPA regression:
 
-- Language: **slang**, **Verible**
-- Simulation/verification: **Icarus Verilog**, **Verilator**, **GHDL**, **cocotb**, **Surfer**
-- Synthesis/FPGA: **Yosys**, **nextpnr**
-- Formal: **SymbiYosys**
-- Physical/timing: **OpenROAD**, **OpenSTA**, **KLayout**
-- Local AI: **Ollama**
-
-The EDA tools are optional external dependencies; the repository test suite uses deterministic fake backends for tool-contract tests and a separate real Icarus smoke test in CI.
+1. **Chief Silicon Architect (L4 Commander)** — hierarchical orchestration and ticket arbitration
+2. **RTL Agent (L2 Executor)** — synthesizable RTL generation and pipeline restructuring
+3. **Verification Agent (L2 Executor)** — formal property verification and regression execution
+4. **Timing Scout (L0 Scout)** — STA report interrogation and timing root cause extraction
+5. **ECO Planner (L2 Executor)** — cross-domain ECO strategy formulation
+6. **ECO Negotiator (L3/L4 Arbitrator)** — ticket generation, candidate scoring, and trade-off negotiation
+7. **Physical Agent (L2 Executor)** — place and route, M4 congestion check, and physical ECO buffering
+8. **Signoff Sentry (L0 Scout)** — deterministic tapeout gatekeeper and signoff rule auditing
+9. **Evidence Agent (L1 Specialist)** — reproducible signoff evidence packaging and release bundles
 
 ## Quick Start
 
@@ -90,16 +98,10 @@ Launch the desktop application:
 pnpm desktop
 ```
 
-Run the terminal demonstration pipeline (requires the tools used by that flow, including Icarus for simulation):
+Run the terminal demonstration pipeline:
 
 ```bash
 pnpm start
-```
-
-Live model calls are opt-in for the CLI demo:
-
-```bash
-NAYVID_CLI_AI=1 pnpm start
 ```
 
 ## AI Providers and Privacy
@@ -118,45 +120,7 @@ Workspace policies:
 - `cloud-allowed`
 - `ai-disabled`
 
-`ask-before-cloud` does not silently send RTL to a cloud provider. It uses a local provider when available or requires explicit cloud approval for the request.
-
-## Real Counter Verification Demo
-
-The repository contains a real SystemVerilog counter testbench:
-
-```text
-examples/counter/rtl/counter.sv
-examples/counter/tb/counter_tb.sv
-```
-
-The CI smoke flow compiles it using Icarus Verilog, executes it with `vvp`, checks the PASS result, and verifies that a non-empty `sim.vcd` was generated.
-
-## Testing Strategy
-
-CI runs on **Ubuntu and Windows** using Node.js 22 and includes:
-
-1. TypeScript builds for all workspace packages/apps.
-2. Unit tests for pure domain logic.
-3. Runtime-contract tests using injected execution backends.
-4. Agent gateway safety and real-command invocation tests.
-5. Provider HTTP contract/error tests without live cloud credentials.
-6. Desktop IPC/workspace-confinement tests.
-7. Renderer/cockpit integration tests with deterministic provider/tool injection.
-8. A real Ubuntu Icarus → `vvp` → VCD smoke test.
-
-## Desktop Distribution
-
-The Electron package can be built through:
-
-```bash
-pnpm dist
-```
-
-Packaging support will continue to evolve independently from EDA runtime support; on Windows, Linux-first tools can still execute through WSL2 or Docker when their registry policy requires it.
-
-## Documentation
-
-See [docs/tutorial.md](docs/tutorial.md) for the current tutorial.
+The zero-egress Context Firewall sanitizes proprietary PDK/RTL context before any cloud egress.
 
 ## License
 

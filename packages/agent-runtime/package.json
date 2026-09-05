@@ -1,0 +1,22 @@
+{
+  "name": "@nayvid/agent-runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nayvid/silicon-graph": "workspace:*",
+    "@nayvid/agent-harness": "workspace:*",
+    "@nayvid/negotiation-bus": "workspace:*",
+    "@nayvid/ai-core": "workspace:*",
+    "@nayvid/model-providers": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

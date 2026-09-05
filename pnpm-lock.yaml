@@ -51,6 +51,15 @@ importers:
 
   apps/renderer:
     dependencies:
+      '@nayvid/agent-harness':
+        specifier: workspace:*
+        version: link:../../packages/agent-harness
+      '@nayvid/agent-registry':
+        specifier: workspace:*
+        version: link:../../packages/agent-registry
+      '@nayvid/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@nayvid/agent-tools':
         specifier: workspace:*
         version: link:../../packages/agent-tools
@@ -60,24 +69,114 @@ importers:
       '@nayvid/design-ir':
         specifier: workspace:*
         version: link:../../packages/design-ir
+      '@nayvid/eda-adapters':
+        specifier: workspace:*
+        version: link:../../packages/eda-adapters
       '@nayvid/engineering-core':
         specifier: workspace:*
         version: link:../../packages/engineering-core
       '@nayvid/hdl-language':
         specifier: workspace:*
         version: link:../../packages/hdl-language
+      '@nayvid/learning-core':
+        specifier: workspace:*
+        version: link:../../packages/learning-core
       '@nayvid/model-providers':
         specifier: workspace:*
         version: link:../../packages/model-providers
+      '@nayvid/negotiation-bus':
+        specifier: workspace:*
+        version: link:../../packages/negotiation-bus
       '@nayvid/platform-core':
         specifier: workspace:*
         version: link:../../packages/platform-core
+      '@nayvid/runner-fabric':
+        specifier: workspace:*
+        version: link:../../packages/runner-fabric
+      '@nayvid/silicon-graph':
+        specifier: workspace:*
+        version: link:../../packages/silicon-graph
       '@nayvid/tool-registry':
         specifier: workspace:*
         version: link:../../packages/tool-registry
       '@nayvid/verivisual':
         specifier: workspace:*
         version: link:../../packages/verivisual
+    devDependencies:
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@24.13.3)
+
+  packages/agent-harness:
+    dependencies:
+      '@nayvid/platform-core':
+        specifier: workspace:*
+        version: link:../platform-core
+      '@nayvid/silicon-graph':
+        specifier: workspace:*
+        version: link:../silicon-graph
+    devDependencies:
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@24.13.3)
+
+  packages/agent-registry:
+    dependencies:
+      '@nayvid/agent-harness':
+        specifier: workspace:*
+        version: link:../agent-harness
+      '@nayvid/agent-runtime':
+        specifier: workspace:*
+        version: link:../agent-runtime
+      '@nayvid/eda-adapters':
+        specifier: workspace:*
+        version: link:../eda-adapters
+      '@nayvid/learning-core':
+        specifier: workspace:*
+        version: link:../learning-core
+      '@nayvid/negotiation-bus':
+        specifier: workspace:*
+        version: link:../negotiation-bus
+      '@nayvid/platform-core':
+        specifier: workspace:*
+        version: link:../platform-core
+      '@nayvid/runner-fabric':
+        specifier: workspace:*
+        version: link:../runner-fabric
+      '@nayvid/silicon-graph':
+        specifier: workspace:*
+        version: link:../silicon-graph
+    devDependencies:
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@24.13.3)
+
+  packages/agent-runtime:
+    dependencies:
+      '@nayvid/agent-harness':
+        specifier: workspace:*
+        version: link:../agent-harness
+      '@nayvid/ai-core':
+        specifier: workspace:*
+        version: link:../ai-core
+      '@nayvid/model-providers':
+        specifier: workspace:*
+        version: link:../model-providers
+      '@nayvid/negotiation-bus':
+        specifier: workspace:*
+        version: link:../negotiation-bus
+      '@nayvid/silicon-graph':
+        specifier: workspace:*
+        version: link:../silicon-graph
     devDependencies:
       typescript:
         specifier: ^5.5.4
@@ -136,6 +235,22 @@ importers:
         specifier: ^2.0.5
         version: 2.1.9(@types/node@24.13.3)
 
+  packages/eda-adapters:
+    dependencies:
+      '@nayvid/execution-runtime':
+        specifier: workspace:*
+        version: link:../execution-runtime
+      '@nayvid/tool-registry':
+        specifier: workspace:*
+        version: link:../tool-registry
+    devDependencies:
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@24.13.3)
+
   packages/engineering-core:
     dependencies:
       '@nayvid/design-ir':
@@ -174,6 +289,19 @@ importers:
         specifier: ^2.0.5
         version: 2.1.9(@types/node@24.13.3)
 
+  packages/learning-core:
+    dependencies:
+      '@nayvid/silicon-graph':
+        specifier: workspace:*
+        version: link:../silicon-graph
+    devDependencies:
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@24.13.3)
+
   packages/model-providers:
     devDependencies:
       typescript:
@@ -183,7 +311,42 @@ importers:
         specifier: ^2.0.5
         version: 2.1.9(@types/node@24.13.3)
 
+  packages/negotiation-bus:
+    devDependencies:
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@24.13.3)
+
   packages/platform-core:
+    devDependencies:
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@24.13.3)
+
+  packages/runner-fabric:
+    dependencies:
+      '@nayvid/execution-runtime':
+        specifier: workspace:*
+        version: link:../execution-runtime
+    devDependencies:
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@24.13.3)
+
+  packages/silicon-graph:
+    dependencies:
+      '@nayvid/design-ir':
+        specifier: workspace:*
+        version: link:../design-ir
     devDependencies:
       typescript:
         specifier: ^5.5.4
