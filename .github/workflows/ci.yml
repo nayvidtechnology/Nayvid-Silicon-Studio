@@ -105,3 +105,34 @@ jobs:
         env:
           NAYVID_REAL_SLANG: '1'
         run: pnpm --filter @nayvid/hdl-language test
+
+  linux-desktop-e2e:
+    name: Ubuntu / Electron project lifecycle click contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.20.0'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install real simulator and virtual display
+        run: sudo apt-get update && sudo apt-get install -y iverilog xvfb
+
+      - name: Build full desktop and NSAR workspace
+        run: pnpm build
+
+      - name: Run real Electron click-contract E2E
+        run: xvfb-run -a pnpm --filter nayvid-desktop-electron test:e2e
