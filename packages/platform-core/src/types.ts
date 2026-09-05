@@ -5,12 +5,20 @@ export type ProjectRole = 'viewer' | 'engineer' | 'lead' | 'admin';
 export type ProjectAction = 'project:read' | 'project:write' | 'run:execute' | 'run:read' | 'signoff:approve' | 'ai:cloud' | 'license:manage';
 
 export interface ToolchainRequirement { toolId: string; version?: string; required?: boolean; runtimes?: RuntimeKind[]; }
+export interface ProjectVerificationConfig {
+  testbenchTop: string;
+  sources: string[];
+  output?: string;
+  waveformPath: string;
+}
 export interface ProjectManifest {
   schemaVersion: 1;
   name: string;
   topModule: string;
   sources: string[];
   includeDirs?: string[];
+  constraints?: string[];
+  verification?: ProjectVerificationConfig;
   defines?: Record<string, string | number | boolean>;
   parameters?: Record<string, string | number | boolean>;
   toolchain?: ToolchainRequirement[];
