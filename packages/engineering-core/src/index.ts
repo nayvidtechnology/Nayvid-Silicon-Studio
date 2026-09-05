@@ -1,4 +1,4 @@
-import type { DesignGraph } from '@nayvid/design-ir';
+import type { DesignGraph, DesignModule, DesignPort } from '@nayvid/design-ir';
 import type {
   CoverageMetrics,
   DesignHealthCheck,
@@ -101,7 +101,7 @@ export class DesignHealthEngine {
   fromDesignGraph(graph: DesignGraph): Pick<DesignHealthInput, 'cdcIssues' | 'combinationalLoops'> {
     let cdcIssues = 0;
     let combinationalLoops = 0;
-    for (const mod of Object.values(graph.modules)) {
+    for (const mod of Object.values(graph.modules) as DesignModule[]) {
       for (const sig of mod.signals) {
         if (sig.dependsOn?.includes(sig.name)) combinationalLoops++;
         if (sig.clockDomain && !mod.clockDomains.includes(sig.clockDomain)) cdcIssues++;
@@ -295,7 +295,7 @@ export class VerificationPlanGenerator {
       for (const transition of fsm.transitions) plan.push(`FSM ${fsm.name}: ${transition.from} -> ${transition.to}${transition.condition ? ` when ${transition.condition}` : ''}`);
     }
     for (const instance of top.instances) plan.push(`Interface/integration behavior for instance ${instance.name}:${instance.moduleName}`);
-    for (const output of top.ports.filter((p) => p.direction === 'output')) plan.push(`Output ${output.name} correctness and boundary values`);
+    for (const output of top.ports.filter((p: DesignPort) => p.direction === 'output')) plan.push(`Output ${output.name} correctness and boundary values`);
     return [...new Set(plan)];
   }
 }
