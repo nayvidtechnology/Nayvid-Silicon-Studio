@@ -5,10 +5,10 @@
   "type": "module",
   "main": "./dist/main.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node ./scripts/finalize-preload.mjs",
     "test": "vitest run",
     "test:e2e": "electron ./e2e/click-contract.mjs",
-    "start": "pnpm --filter nayvid-renderer build && tsc && electron .",
+    "start": "pnpm --filter nayvid-renderer build && pnpm build && electron .",
     "dist": "electron-builder --dir",
     "dist:win": "electron-builder --win",
     "dist:all": "electron-builder -mwl"
