@@ -34,7 +34,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build all workspaces
         run: pnpm build
@@ -63,3 +63,45 @@ jobs:
         run: |
           grep -q 'PASS: counter rollover and done pulse verified' .nayvid/sim/counter_tb.log
           test -s sim.vcd
+
+  linux-slang-smoke:
+    name: Ubuntu / Real slang v11 elaboration smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.20.0'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install pinned slang v11.0
+        shell: bash
+        run: |
+          mkdir -p .tools/slang
+          curl --fail --location --retry 3 https://github.com/MikePopoloski/slang/releases/download/v11.0/slang-linux-x86_64.tar.gz -o /tmp/slang-linux-x86_64.tar.gz
+          echo '951a170e10e25e54c91565030acfdfc11c3226714ebf225a18ad4166a898d8a4  /tmp/slang-linux-x86_64.tar.gz' | sha256sum --check --strict
+          tar -xzf /tmp/slang-linux-x86_64.tar.gz -C .tools/slang
+          SLANG_BIN="$(find "$PWD/.tools/slang" -type f -name slang -perm -u+x | head -n 1)"
+          test -n "$SLANG_BIN"
+          echo "$(dirname "$SLANG_BIN")" >> "$GITHUB_PATH"
+          "$SLANG_BIN" --version
+
+      - name: Build HDL language package
+        run: pnpm --filter @nayvid/hdl-language... build
+
+      - name: Run real slang adapter smoke
+        env:
+          NAYVID_REAL_SLANG: '1'
+        run: pnpm --filter @nayvid/hdl-language test

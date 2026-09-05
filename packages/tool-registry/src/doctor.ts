@@ -11,8 +11,8 @@ export class NayvidDoctorService {
   async checkTool(tool: ToolDefinition, preferredRuntime: RuntimeType = 'auto'): Promise<ToolCheckResult> {
     try {
       const backend = await this.runtimeManager.resolveBestBackendFor(tool.supportedRuntimes, preferredRuntime);
-      const flag = tool.versionFlag ?? '--version';
-      const res = await backend.execute(tool.binaryName, [flag], { timeoutMs: 5000 });
+      const probeArgs = tool.probeArgs ?? [tool.versionFlag ?? '--version'];
+      const res = await backend.execute(tool.binaryName, probeArgs, { timeoutMs: 5000 });
       const rawOutput = (res.stdout + '\n' + res.stderr).trim();
       const installed = res.code === 0;
       const firstLine = rawOutput.split('\n').find(Boolean) || '';
