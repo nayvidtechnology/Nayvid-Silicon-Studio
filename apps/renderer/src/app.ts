@@ -44,6 +44,14 @@ import {
   type VerificationSnapshot,
   type VerificationSummary,
 } from '@nayvid/engineering-core';
+import { SiliconKnowledgeGraph } from '@nayvid/silicon-graph';
+import { ECONegotiationBus } from '@nayvid/negotiation-bus';
+import { UniversalToolBus } from '@nayvid/eda-adapters';
+import { ComputeBroker } from '@nayvid/runner-fabric';
+import { AgentVerificationHarness } from '@nayvid/agent-harness';
+import { DeterministicAgentStateMachine, ContextFirewall } from '@nayvid/agent-runtime';
+import { EngineeringPlaybook, StrategyPromotionPipeline } from '@nayvid/learning-core';
+import { SiliconAgentCatalog, NineAgentTimingClosureSwarm } from '@nayvid/agent-registry';
 import type { DesignGraph } from '@nayvid/design-ir';
 
 export type StudioTab =
@@ -61,6 +69,7 @@ export type StudioTab =
   | 'traceability'
   | 'register-map'
   | 'physical'
+  | 'nsar'
   | 'doctor';
 
 export interface StudioState {
@@ -123,6 +132,18 @@ export class SiliconStudioApp {
   private formal = new FormalAssistant();
   private verificationPlan = new VerificationPlanGenerator();
 
+  private siliconGraph = new SiliconKnowledgeGraph();
+  private ecoBus = new ECONegotiationBus();
+  private toolBus = new UniversalToolBus();
+  private computeBroker = new ComputeBroker();
+  private verificationHarness = new AgentVerificationHarness();
+  private stateMachine = new DeterministicAgentStateMachine(this.siliconGraph, this.ecoBus);
+  private contextFirewall = new ContextFirewall();
+  private playbook = new EngineeringPlaybook();
+  private promotionPipeline = new StrategyPromotionPipeline();
+  private agentCatalog = new SiliconAgentCatalog();
+  private timingSwarm = new NineAgentTimingClosureSwarm();
+
   private state: StudioState = {
     appName: 'Nayvid Silicon Studio',
     tagline: 'AI-native silicon engineering workspace — Design. Verify. Visualize. Build Silicon.',
@@ -180,6 +201,7 @@ export class SiliconStudioApp {
     if (Object.keys(graph.modules).length === 0) throw new Error(`No HDL modules were parsed from ${filePath}`);
     this.state.designGraph = graph;
     this.state.topModule = graph.topModule;
+    this.siliconGraph.ingestDesignGraph(graph);
     return graph;
   }
 
@@ -330,6 +352,17 @@ export class SiliconStudioApp {
 
   async generateVerificationPlan(): Promise<string[]> {
     return this.verificationPlan.fromDesignGraph(await this.loadDesignGraph());
+  }
+
+  getSiliconAgentCatalog(): SiliconAgentCatalog { return this.agentCatalog; }
+  getSiliconKnowledgeGraph(): SiliconKnowledgeGraph { return this.siliconGraph; }
+  getECONegotiationBus(): ECONegotiationBus { return this.ecoBus; }
+  getUniversalToolBus(): UniversalToolBus { return this.toolBus; }
+  getComputeBroker(): ComputeBroker { return this.computeBroker; }
+  getEngineeringPlaybook(): EngineeringPlaybook { return this.playbook; }
+
+  async runTimingClosureSwarm() {
+    return this.timingSwarm.runTimingClosureScenario();
   }
 
   getTimeline(): AgentActivityItem[] { return this.timelineTracker.getTimeline(); }
